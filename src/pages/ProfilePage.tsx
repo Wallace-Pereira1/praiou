@@ -1,5 +1,15 @@
-import { Loader2, LogIn, LogOut, Plus, User as UserIcon } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import {
+  AlertTriangle,
+  Check,
+  Loader2,
+  LogIn,
+  LogOut,
+  Pencil,
+  Plus,
+  User as UserIcon,
+  X,
+} from 'lucide-react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AppLayout } from '../components/layout/AppLayout';
 import { ReportCard } from '../components/social/ReportCard';
@@ -7,36 +17,171 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { EmptyState } from '../components/ui/EmptyState';
+import { ErrorState } from '../components/ui/ErrorState';
+import { Skeleton } from '../components/ui/Skeleton';
 import { useApp } from '../context/AppContext';
+import * as reportsService from '../services/reports';
+import type { BeachReport } from '../types';
 import { getInitials } from '../utils/formatters';
 
 export function ProfilePage() {
-  const { user, authReady, reports, deleteReport, logout } = useApp();
+  const {
+    user,
+    authReady,
+    profileError,
+    profileLoading,
+    refreshProfile,
+    updateProfileName,
+    logout,
+  } = useApp();
   const navigate = useNavigate();
 
   const [avatarError, setAvatarError] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [draftName, setDraftName] = useState('');
+  const [isSavingName, setIsSavingName] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+
+  const [userReports, setUserReports] = useState<BeachReport[]>([]);
+  const [userReportsTotal, setUserReportsTotal] = useState(0);
+  const [evaluatedBeachesCount, setEvaluatedBeachesCount] = useState(0);
+  const [reportsPage, setReportsPage] = useState(1);
+  const [reportsHasMore, setReportsHasMore] = useState(false);
+  const [reportsLoading, setReportsLoading] = useState(false);
+  const [reportsLoadingMore, setReportsLoadingMore] = useState(false);
+  const [reportsError, setReportsError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [reportPendingDelete, setReportPendingDelete] = useState<string | null>(null);
 
   useEffect(() => {
     setAvatarError(false);
   }, [user?.avatarUrl]);
 
-  const userReports = useMemo(
-    () => (user ? reports.filter((r) => r.userId === user.id) : []),
-    [user, reports]
+  const loadUserReports = useCallback(
+    async (userId: string, targetPage: number, append: boolean) => {
+      if (append) {
+        setReportsLoadingMore(true);
+      } else {
+        setReportsLoading(true);
+      }
+      setReportsError(null);
+
+      try {
+        const [pageResult, beachesTotal] = await Promise.all([
+          reportsService.getReportsByUser(userId, {
+            page: targetPage,
+            pageSize: reportsService.DEFAULT_REPORTS_PAGE_SIZE,
+          }),
+          append
+            ? Promise.resolve(null)
+            : reportsService.getUserEvaluatedBeachesCount(userId),
+        ]);
+
+        setReportsPage(pageResult.page);
+        setUserReportsTotal(pageResult.totalCount);
+        setReportsHasMore(pageResult.hasMore);
+
+        if (beachesTotal !== null) {
+          setEvaluatedBeachesCount(beachesTotal);
+        }
+
+        if (append) {
+          setUserReports((prev) => {
+            const seen = new Set(prev.map((r) => r.id));
+            const next = pageResult.items.filter((r) => !seen.has(r.id));
+            return [...prev, ...next];
+          });
+        } else {
+          setUserReports(pageResult.items);
+        }
+      } catch (err) {
+        if (!append) {
+          setUserReports([]);
+          setUserReportsTotal(0);
+          setEvaluatedBeachesCount(0);
+          setReportsHasMore(false);
+        }
+        setReportsError(
+          err instanceof Error
+            ? err.message
+            : 'Não foi possível carregar seus relatos agora.'
+        );
+      } finally {
+        setReportsLoading(false);
+        setReportsLoadingMore(false);
+      }
+    },
+    []
   );
 
-  const uniqueBeachesCount = useMemo(
-    () => new Set(userReports.map((r) => r.beachId)).size,
-    [userReports]
-  );
+  useEffect(() => {
+    if (!authReady || !user?.id) {
+      setUserReports([]);
+      setUserReportsTotal(0);
+      setEvaluatedBeachesCount(0);
+      setReportsHasMore(false);
+      setReportsError(null);
+      return;
+    }
+
+    void loadUserReports(user.id, 1, false);
+  }, [authReady, user?.id, loadUserReports]);
+
+  const handleSaveName = async (e: FormEvent) => {
+    e.preventDefault();
+    const trimmed = draftName.trim();
+    if (trimmed.length < 2 || trimmed.length > 60) {
+      setNameError('Digite um nome entre 2 e 60 caracteres.');
+      return;
+    }
+
+    setNameError(null);
+    setIsSavingName(true);
+    try {
+      const updated = await updateProfileName(trimmed);
+      setUserReports((prev) =>
+        prev.map((r) =>
+          r.userId === updated.id ? { ...r, userName: updated.displayName } : r
+        )
+      );
+      setIsEditingName(false);
+    } catch (err) {
+      setNameError(
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível salvar seu nome agora.'
+      );
+    } finally {
+      setIsSavingName(false);
+    }
+  };
 
   const handleConfirmDelete = async () => {
-    if (reportPendingDelete) {
-      const targetId = reportPendingDelete;
-      setReportPendingDelete(null);
-      await deleteReport(targetId);
+    if (!reportPendingDelete || !user) return;
+    const targetId = reportPendingDelete;
+    setReportPendingDelete(null);
+    setDeleteError(null);
+
+    try {
+      await reportsService.deleteReport(targetId);
+      setUserReports((prev) => prev.filter((r) => r.id !== targetId));
+      setUserReportsTotal((prev) => Math.max(0, prev - 1));
+      try {
+        const updatedBeachesCount = await reportsService.getUserEvaluatedBeachesCount(
+          user.id
+        );
+        setEvaluatedBeachesCount(updatedBeachesCount);
+      } catch {
+        // Mantém contagem anterior se a atualização secundária falhar
+      }
+    } catch (err) {
+      setDeleteError(
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível excluir o relato agora.'
+      );
     }
   };
 
@@ -68,7 +213,7 @@ export function ProfilePage() {
           <EmptyState
             icon={<UserIcon className="h-6 w-6" aria-hidden="true" />}
             title="Entre no Praiou?"
-            description="Acesse sua conta para gerenciar seu perfil, acompanhar seus relatos e compartilhar fotos das praias do Rio."
+            description="Acesse sua conta para gerenciar seu perfil, acompanhar seus relatos e avaliar as praias do Rio."
             action={
               <Link
                 to="/entrar"
@@ -82,6 +227,27 @@ export function ProfilePage() {
         </div>
       ) : (
         <div className="space-y-6">
+          {/* Erro recuperável ao consultar public.profiles sem deslogar */}
+          {profileError && (
+            <div
+              role="alert"
+              className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-[#F59E0B]/40 bg-[#FEF3C7] px-4 py-3 text-sm text-[#92400E]"
+            >
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" aria-hidden="true" />
+                <span>{profileError}</span>
+              </div>
+              <Button
+                variant="secondary"
+                size="md"
+                loading={profileLoading}
+                onClick={() => void refreshProfile()}
+              >
+                Tentar novamente
+              </Button>
+            </div>
+          )}
+
           {/* Card do perfil */}
           <Card padding="lg">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -101,9 +267,68 @@ export function ProfilePage() {
                 )}
 
                 <div className="min-w-0 flex-1">
-                  <h1 className="truncate font-display text-xl font-bold text-[#0F172A]">
-                    {user.name}
-                  </h1>
+                  {!isEditingName ? (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <h1 className="truncate font-display text-xl font-bold text-[#0F172A]">
+                        {user.name}
+                      </h1>
+                      {!profileError && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDraftName(user.name);
+                            setNameError(null);
+                            setIsEditingName(true);
+                          }}
+                          aria-label="Editar nome público"
+                          className="min-h-[44px] inline-flex items-center gap-1 rounded-xl px-2.5 text-xs font-semibold text-[#0284C7] hover:bg-sky-50 transition-colors"
+                        >
+                          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                          Editar
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <form onSubmit={handleSaveName} className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="text"
+                          value={draftName}
+                          onChange={(e) => {
+                            setDraftName(e.target.value);
+                            setNameError(null);
+                          }}
+                          maxLength={60}
+                          aria-label="Nome de exibição público"
+                          className="min-h-[44px] rounded-xl border border-[#0284C7] bg-white px-3 text-sm font-semibold text-[#0F172A] focus:outline-none"
+                          autoFocus
+                        />
+                        <Button
+                          type="submit"
+                          size="md"
+                          loading={isSavingName}
+                          disabled={isSavingName}
+                        >
+                          {!isSavingName && <Check className="h-4 w-4" aria-hidden="true" />}
+                          {isSavingName ? 'Salvando...' : 'Salvar'}
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="md"
+                          disabled={isSavingName}
+                          onClick={() => {
+                            setIsEditingName(false);
+                            setNameError(null);
+                          }}
+                        >
+                          Cancelar
+                        </Button>
+                      </div>
+                      {nameError && (
+                        <p className="text-xs font-medium text-[#991B1B]">{nameError}</p>
+                      )}
+                    </form>
+                  )}
 
                   <p className="mt-0.5 truncate text-sm text-[#475569]">
                     {user.email ? `${user.email} · ` : ''}Conta Google
@@ -130,7 +355,7 @@ export function ProfilePage() {
                   Relatos publicados
                 </span>
                 <p className="mt-0.5 font-display text-2xl font-extrabold text-[#0F172A] tabular-nums">
-                  {userReports.length}
+                  {reportsLoading || reportsError ? '—' : userReportsTotal}
                 </p>
               </div>
               <div>
@@ -138,7 +363,7 @@ export function ProfilePage() {
                   Praias avaliadas
                 </span>
                 <p className="mt-0.5 font-display text-2xl font-extrabold text-[#0F172A] tabular-nums">
-                  {uniqueBeachesCount}
+                  {reportsLoading || reportsError ? '—' : evaluatedBeachesCount}
                 </p>
               </div>
             </div>
@@ -149,9 +374,11 @@ export function ProfilePage() {
             <div className="flex items-center justify-between gap-3">
               <h2 className="font-display text-lg font-bold text-[#0F172A]">
                 Meus relatos{' '}
-                <span className="text-[#475569] font-semibold tabular-nums">
-                  ({userReports.length})
-                </span>
+                {!reportsLoading && !reportsError && (
+                  <span className="text-[#475569] font-semibold tabular-nums">
+                    ({userReportsTotal})
+                  </span>
+                )}
               </h2>
               <Link
                 to="/relatar"
@@ -162,7 +389,44 @@ export function ProfilePage() {
               </Link>
             </div>
 
-            {userReports.length === 0 ? (
+            {deleteError && (
+              <div
+                role="alert"
+                className="flex items-center justify-between gap-3 rounded-xl border border-[#EF4444]/30 bg-[#FEE2E2] px-4 py-2.5 text-sm font-medium text-[#991B1B]"
+              >
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span>{deleteError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDeleteError(null)}
+                  aria-label="Fechar erro"
+                  className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg hover:bg-red-200/50 transition-colors"
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+            )}
+
+            {reportsLoading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4" aria-busy="true">
+                {[1, 2].map((n) => (
+                  <Card key={n} padding="md">
+                    <div className="space-y-3">
+                      <Skeleton className="h-10 w-44" />
+                      <Skeleton className="h-4 w-full" />
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            ) : reportsError && userReports.length === 0 ? (
+              <ErrorState
+                title="Não foi possível carregar seus relatos"
+                description={reportsError}
+                onRetry={() => void loadUserReports(user.id, 1, false)}
+              />
+            ) : userReports.length === 0 ? (
               <EmptyState
                 icon={<Plus className="h-6 w-6" aria-hidden="true" />}
                 title="Você ainda não publicou relatos"
@@ -178,15 +442,36 @@ export function ProfilePage() {
                 }
               />
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {userReports.map((report) => (
-                  <ReportCard
-                    key={report.id}
-                    report={report}
-                    showBeachLink
-                    onDeleteRequest={(id) => setReportPendingDelete(id)}
-                  />
-                ))}
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {userReports.map((report) => (
+                    <ReportCard
+                      key={report.id}
+                      report={report}
+                      showBeachLink
+                      onDeleteRequest={
+                        user.id === report.userId
+                          ? (id) => setReportPendingDelete(id)
+                          : undefined
+                      }
+                    />
+                  ))}
+                </div>
+
+                {reportsHasMore && (
+                  <div className="flex justify-center pt-1">
+                    <Button
+                      variant="secondary"
+                      loading={reportsLoadingMore}
+                      disabled={reportsLoadingMore}
+                      onClick={() =>
+                        void loadUserReports(user.id, reportsPage + 1, true)
+                      }
+                    >
+                      {reportsLoadingMore ? 'Carregando...' : 'Carregar mais relatos'}
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </section>

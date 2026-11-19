@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   ArrowLeft,
   Camera,
   Clock,
@@ -12,18 +13,23 @@ import {
   Thermometer,
   Waves,
   Wind,
+  X,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { SafetyNotice } from '../components/layout/SafetyNotice';
 import { ReportCard } from '../components/social/ReportCard';
+import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorState } from '../components/ui/ErrorState';
 import { Skeleton } from '../components/ui/Skeleton';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { WeatherIcon } from '../components/ui/WeatherIcon';
 import { useApp } from '../context/AppContext';
+import * as reportsService from '../services/reports';
+import type { BeachReport } from '../types';
 import { formatCompassDirection } from '../utils/formatters';
 
 export function BeachDetailPage() {
@@ -33,9 +39,7 @@ export function BeachDetailPage() {
   const {
     beaches,
     getSnapshotByBeachId,
-    reports,
-    flaggedReportIds,
-    flagReport,
+    user,
     isInitialLoading,
     loadError,
     refreshData,
@@ -46,6 +50,16 @@ export function BeachDetailPage() {
   const [isRetrying, setIsRetrying] = useState(false);
   const [copiedNotice, setCopiedNotice] = useState(false);
 
+  const [beachReports, setBeachReports] = useState<BeachReport[]>([]);
+  const [beachReportsTotal, setBeachReportsTotal] = useState(0);
+  const [reportsPage, setReportsPage] = useState(1);
+  const [reportsHasMore, setReportsHasMore] = useState(false);
+  const [reportsLoading, setReportsLoading] = useState(false);
+  const [reportsLoadingMore, setReportsLoadingMore] = useState(false);
+  const [reportsError, setReportsError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [reportPendingDelete, setReportPendingDelete] = useState<string | null>(null);
+
   const beach = beaches.find((b) => b.slug === slug);
   const snapshot = beach ? getSnapshotByBeachId(beach.id) : undefined;
 
@@ -54,10 +68,64 @@ export function BeachDetailPage() {
     (!isLoading && Boolean(loadError)) || (!isRetrying && devState === 'erro');
   const isStale = devState === 'desatualizado' || snapshot?.sourceStatus === 'stale';
 
-  const beachReports =
-    !beach || devState === 'vazio'
-      ? []
-      : reports.filter((r) => r.beachId === beach.id);
+  const loadBeachReports = useCallback(
+    async (targetBeachId: string, targetPage: number, append: boolean) => {
+      if (append) {
+        setReportsLoadingMore(true);
+      } else {
+        setReportsLoading(true);
+      }
+      setReportsError(null);
+
+      try {
+        const result = await reportsService.getReportsByBeach(targetBeachId, {
+          page: targetPage,
+          pageSize: reportsService.DEFAULT_REPORTS_PAGE_SIZE,
+        });
+
+        setReportsPage(result.page);
+        setBeachReportsTotal(result.totalCount);
+        setReportsHasMore(result.hasMore);
+
+        if (append) {
+          setBeachReports((prev) => {
+            const seen = new Set(prev.map((r) => r.id));
+            const next = result.items.filter((r) => !seen.has(r.id));
+            return [...prev, ...next];
+          });
+        } else {
+          setBeachReports(result.items);
+        }
+      } catch (err) {
+        if (!append) {
+          setBeachReports([]);
+          setBeachReportsTotal(0);
+          setReportsHasMore(false);
+        }
+        setReportsError(
+          err instanceof Error
+            ? err.message
+            : 'Não foi possível carregar os relatos desta praia.'
+        );
+      } finally {
+        setReportsLoading(false);
+        setReportsLoadingMore(false);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!beach?.id || devState === 'vazio') {
+      setBeachReports([]);
+      setBeachReportsTotal(0);
+      setReportsHasMore(false);
+      setReportsError(null);
+      return;
+    }
+
+    void loadBeachReports(beach.id, 1, false);
+  }, [beach?.id, devState, loadBeachReports]);
 
   const handleRetry = async () => {
     if (devState) {
@@ -79,6 +147,25 @@ export function BeachDetailPage() {
     }
     setCopiedNotice(true);
     window.setTimeout(() => setCopiedNotice(false), 2200);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!reportPendingDelete) return;
+    const targetId = reportPendingDelete;
+    setReportPendingDelete(null);
+    setDeleteError(null);
+
+    try {
+      await reportsService.deleteReport(targetId);
+      setBeachReports((prev) => prev.filter((r) => r.id !== targetId));
+      setBeachReportsTotal((prev) => Math.max(0, prev - 1));
+    } catch (err) {
+      setDeleteError(
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível excluir o relato agora.'
+      );
+    }
   };
 
   if (!isLoading && !hasError && (!beach || !snapshot)) {
@@ -400,7 +487,7 @@ export function BeachDetailPage() {
               </div>
             </Card>
 
-            {/* Câmera / Referência visual (estado neutro e amigável, sem cara de erro) */}
+            {/* Câmera / Referência visual */}
             <Card padding="md">
               <div className="flex items-start gap-3.5">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-[#0284C7]">
@@ -411,8 +498,8 @@ export function BeachDetailPage() {
                     Visão da praia
                   </h2>
                   <p className="mt-1 text-sm leading-relaxed text-[#475569]">
-                    Sem câmera ao vivo disponível para {beach.name}. Veja os relatos com
-                    fotos abaixo para conferir como está a areia neste momento.
+                    Sem câmera ao vivo disponível para {beach.name}. Confira os relatos da
+                    comunidade abaixo para saber como está a areia neste momento.
                   </p>
                 </div>
               </div>
@@ -424,12 +511,14 @@ export function BeachDetailPage() {
                 <div>
                   <h2 className="font-display text-lg font-bold text-[#0F172A]">
                     Relatos em {beach.name}{' '}
-                    <span className="text-[#475569] font-semibold tabular-nums">
-                      ({beachReports.length})
-                    </span>
+                    {!reportsLoading && !reportsError && (
+                      <span className="text-[#475569] font-semibold tabular-nums">
+                        ({beachReportsTotal})
+                      </span>
+                    )}
                   </h2>
                   <p className="text-xs text-[#475569]">
-                    Impressões recentes de quem passou pela areia hoje
+                    Impressões recentes de quem passou pela areia
                   </p>
                 </div>
 
@@ -442,11 +531,48 @@ export function BeachDetailPage() {
                 </Link>
               </div>
 
-              {beachReports.length === 0 ? (
+              {deleteError && (
+                <div
+                  role="alert"
+                  className="flex items-center justify-between gap-3 rounded-xl border border-[#EF4444]/30 bg-[#FEE2E2] px-4 py-2.5 text-sm font-medium text-[#991B1B]"
+                >
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span>{deleteError}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteError(null)}
+                    aria-label="Fechar erro"
+                    className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg hover:bg-red-200/50 transition-colors"
+                  >
+                    <X className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                </div>
+              )}
+
+              {reportsLoading ? (
+                <div className="space-y-3.5" aria-busy="true">
+                  {[1, 2].map((n) => (
+                    <Card key={n} padding="md">
+                      <div className="space-y-3">
+                        <Skeleton className="h-10 w-44" />
+                        <Skeleton className="h-4 w-full" />
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              ) : reportsError && beachReports.length === 0 ? (
+                <ErrorState
+                  title={`Não foi possível carregar os relatos de ${beach.name}`}
+                  description={reportsError}
+                  onRetry={() => void loadBeachReports(beach.id, 1, false)}
+                />
+              ) : beachReports.length === 0 ? (
                 <EmptyState
                   dashed
                   icon={<MessageSquarePlus className="h-6 w-6" aria-hidden="true" />}
-                  title={`Ainda não há relatos de ${beach.name} hoje`}
+                  title={`Ainda não há relatos de ${beach.name}`}
                   description="Está por aí ou passou perto da orla? Seu relato rápido ajuda outras pessoas a decidirem se vale ir agora."
                   action={
                     <Link
@@ -465,10 +591,28 @@ export function BeachDetailPage() {
                       key={report.id}
                       report={report}
                       showBeachLink={false}
-                      isFlagged={flaggedReportIds.includes(report.id)}
-                      onFlag={flagReport}
+                      onDeleteRequest={
+                        user?.id === report.userId
+                          ? (id) => setReportPendingDelete(id)
+                          : undefined
+                      }
                     />
                   ))}
+
+                  {reportsHasMore && (
+                    <div className="flex justify-center pt-1">
+                      <Button
+                        variant="secondary"
+                        loading={reportsLoadingMore}
+                        disabled={reportsLoadingMore}
+                        onClick={() =>
+                          void loadBeachReports(beach.id, reportsPage + 1, true)
+                        }
+                      >
+                        {reportsLoadingMore ? 'Carregando...' : 'Carregar mais relatos'}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </section>
@@ -491,6 +635,17 @@ export function BeachDetailPage() {
           </>
         )}
       </main>
+
+      <ConfirmModal
+        open={reportPendingDelete !== null}
+        title="Excluir este relato?"
+        description="Ele será removido permanentemente da praia e do seu perfil."
+        confirmLabel="Excluir relato"
+        cancelLabel="Manter"
+        destructive
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setReportPendingDelete(null)}
+      />
     </div>
   );
 }

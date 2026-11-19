@@ -3,20 +3,20 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
 } from 'react';
 import * as authService from '../services/auth';
 import * as beachesService from '../services/beaches';
-import * as reportsService from '../services/reports';
+import * as profilesService from '../services/profiles';
 import * as snapshotsService from '../services/snapshots';
 import type {
   AppUser,
   Beach,
-  BeachReport,
   BeachSnapshot,
-  CreateReportPayload,
+  UserProfile,
 } from '../types';
 
 const STORAGE_SAFETY_DISMISSED = 'praiou_safety_dismissed';
@@ -24,9 +24,10 @@ const STORAGE_SAFETY_DISMISSED = 'praiou_safety_dismissed';
 interface AppContextValue {
   beaches: Beach[];
   snapshots: BeachSnapshot[];
-  reports: BeachReport[];
-  flaggedReportIds: string[];
   user: AppUser | null;
+  profile: UserProfile | null;
+  profileLoading: boolean;
+  profileError: string | null;
   authReady: boolean;
   isInitialLoading: boolean;
   loadError: string | null;
@@ -34,9 +35,8 @@ interface AppContextValue {
   dismissSafetyBanner: () => void;
   getSnapshotByBeachId: (beachId: string) => BeachSnapshot | undefined;
   refreshData: (forceRefresh?: boolean) => Promise<void>;
-  addReport: (payload: CreateReportPayload) => Promise<BeachReport>;
-  deleteReport: (reportId: string) => Promise<void>;
-  flagReport: (reportId: string) => Promise<void>;
+  refreshProfile: () => Promise<void>;
+  updateProfileName: (displayName: string) => Promise<UserProfile>;
   signInWithGoogle: () => Promise<void>;
   exchangeOAuthCode: (code: string) => Promise<AppUser>;
   logout: () => Promise<void>;
@@ -47,15 +47,17 @@ const AppContext = createContext<AppContextValue | undefined>(undefined);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [beaches, setBeaches] = useState<Beach[]>([]);
   const [snapshots, setSnapshots] = useState<BeachSnapshot[]>([]);
-  const [reports, setReports] = useState<BeachReport[]>([]);
-  const [flaggedReportIds, setFlaggedReportIds] = useState<string[]>([]);
-  const [user, setUser] = useState<AppUser | null>(null);
+  const [authUser, setAuthUser] = useState<AppUser | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // Evita que uma leitura inicial lenta sobrescreva eventos mais recentes de autenticação
   const authEpochRef = useRef(0);
+  const profileRequestRef = useRef(0);
 
   const [safetyBannerDismissed, setSafetyBannerDismissed] = useState<boolean>(() => {
     try {
@@ -71,7 +73,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const unsubscribe = authService.onAuthStateChange((nextUser) => {
       if (!mounted) return;
       authEpochRef.current += 1;
-      setUser(nextUser);
+      setAuthUser(nextUser);
+      if (!nextUser) {
+        setProfile(null);
+        setProfileError(null);
+        setProfileLoading(false);
+      }
       setAuthReady(true);
     });
 
@@ -81,14 +88,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .then((initialUser) => {
         if (!mounted) return;
         if (authEpochRef.current === capturedEpoch) {
-          setUser(initialUser);
+          setAuthUser(initialUser);
           setAuthReady(true);
         }
       })
       .catch(() => {
         if (!mounted) return;
         if (authEpochRef.current === capturedEpoch) {
-          setUser(null);
+          setAuthUser(null);
           setAuthReady(true);
         }
       });
@@ -99,24 +106,68 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const fetchProfileForUser = useCallback(async (userId: string) => {
+    const requestId = ++profileRequestRef.current;
+    setProfileLoading(true);
+    setProfileError(null);
+
+    try {
+      const loadedProfile = await profilesService.getProfile(userId);
+      if (profileRequestRef.current !== requestId) return;
+      setProfile(loadedProfile);
+    } catch (err) {
+      if (profileRequestRef.current !== requestId) return;
+      setProfileError(
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível carregar seu perfil público.'
+      );
+    } finally {
+      if (profileRequestRef.current === requestId) {
+        setProfileLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!authReady) return;
+
+    if (!authUser?.id) {
+      profileRequestRef.current += 1;
+      setProfile(null);
+      setProfileError(null);
+      setProfileLoading(false);
+      return;
+    }
+
+    void fetchProfileForUser(authUser.id);
+  }, [authReady, authUser?.id, fetchProfileForUser]);
+
+  const refreshProfile = useCallback(async () => {
+    if (!authUser?.id) return;
+    await fetchProfileForUser(authUser.id);
+  }, [authUser?.id, fetchProfileForUser]);
+
+  const updateProfileName = useCallback(
+    async (displayName: string): Promise<UserProfile> => {
+      const updated = await profilesService.updateOwnProfile({ displayName });
+      setProfile(updated);
+      setProfileError(null);
+      return updated;
+    },
+    []
+  );
+
   const loadAll = useCallback(async (forceRefresh = false) => {
     setLoadError(null);
     try {
-      const [loadedBeaches, loadedSnapshots, loadedReports] = await Promise.all([
+      const [loadedBeaches, loadedSnapshots] = await Promise.all([
         beachesService.getBeaches(),
         snapshotsService.getLatestSnapshots(forceRefresh),
-        reportsService.getAllReports(),
       ]);
-
-      const beachBySlug = new Map(loadedBeaches.map((b) => [b.slug, b]));
-      const alignedReports = loadedReports.map((report) => {
-        const matchedBeach = beachBySlug.get(report.beachSlug);
-        return matchedBeach ? { ...report, beachId: matchedBeach.id } : report;
-      });
 
       setBeaches(loadedBeaches);
       setSnapshots(loadedSnapshots);
-      setReports(alignedReports);
     } catch {
       setLoadError('Não foi possível carregar os dados das praias agora.');
     } finally {
@@ -147,26 +198,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const getSnapshotByBeachId = (beachId: string) =>
     snapshots.find((s) => s.beachId === beachId);
 
-  const addReport = async (payload: CreateReportPayload): Promise<BeachReport> => {
-    const created = await reportsService.createReport(payload);
-    setReports((prev) => [created, ...prev]);
-    return created;
-  };
-
-  const deleteReport = async (reportId: string): Promise<void> => {
-    await reportsService.deleteReport(reportId);
-    setReports((prev) => prev.filter((r) => r.id !== reportId));
-  };
-
-  const flagReport = async (reportId: string): Promise<void> => {
-    if (flaggedReportIds.includes(reportId)) return;
-    await reportsService.flagReport(reportId);
-    setFlaggedReportIds((prev) => [...prev, reportId]);
-    setReports((prev) =>
-      prev.map((r) => (r.id === reportId ? { ...r, flagsCount: r.flagsCount + 1 } : r))
-    );
-  };
-
   const signInWithGoogle = useCallback(async (): Promise<void> => {
     await authService.signInWithGoogle();
   }, []);
@@ -174,7 +205,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const exchangeOAuthCode = useCallback(async (code: string): Promise<AppUser> => {
     const authenticatedUser = await authService.exchangeCodeForSession(code);
     authEpochRef.current += 1;
-    setUser(authenticatedUser);
+    setAuthUser(authenticatedUser);
     setAuthReady(true);
     return authenticatedUser;
   }, []);
@@ -182,18 +213,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async (): Promise<void> => {
     await authService.signOut();
     authEpochRef.current += 1;
-    setUser(null);
+    profileRequestRef.current += 1;
+    setAuthUser(null);
+    setProfile(null);
+    setProfileError(null);
+    setProfileLoading(false);
     setAuthReady(true);
   }, []);
+
+  const user = useMemo<AppUser | null>(() => {
+    if (!authUser) return null;
+    return {
+      ...authUser,
+      name: profile?.displayName ?? authUser.name,
+      avatarUrl: profile?.avatarUrl ?? authUser.avatarUrl,
+    };
+  }, [authUser, profile]);
 
   return (
     <AppContext.Provider
       value={{
         beaches,
         snapshots,
-        reports,
-        flaggedReportIds,
         user,
+        profile,
+        profileLoading,
+        profileError,
         authReady,
         isInitialLoading,
         loadError,
@@ -201,9 +246,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         dismissSafetyBanner,
         getSnapshotByBeachId,
         refreshData,
-        addReport,
-        deleteReport,
-        flagReport,
+        refreshProfile,
+        updateProfileName,
         signInWithGoogle,
         exchangeOAuthCode,
         logout,

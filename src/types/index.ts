@@ -49,6 +49,15 @@ export interface BeachSnapshot {
   updatedAtLabel: string; // Ex.: "13:45"
 }
 
+export interface UserProfile {
+  id: string;
+  displayName: string;
+  avatarUrl?: string;
+  bannerPath?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface BeachReport {
   id: string;
   beachId: string;
@@ -56,21 +65,28 @@ export interface BeachReport {
   beachName: string;
   userId: string;
   userName: string;
+  userAvatarUrl?: string;
   rating: 1 | 2 | 3 | 4 | 5;
   comment: string;
   photoPath?: string;
   photoUrl?: string;
   photoAlt?: string;
   createdAt: string;
-  flagsCount: number;
+  flagsCount?: number;
 }
 
 export interface CreateReportPayload {
   beachId: string;
   rating: 1 | 2 | 3 | 4 | 5;
   comment?: string;
-  photoFile?: File | null;
-  photoPreviewUrl?: string;
+}
+
+export interface PaginatedReportsResult {
+  items: BeachReport[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
 }
 
 export interface AppUser {

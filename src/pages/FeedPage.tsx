@@ -1,29 +1,25 @@
-import { CheckCircle2, Plus, Star, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, CheckCircle2, Plus, Star, X } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { AppLayout } from '../components/layout/AppLayout';
 import { ReportCard } from '../components/social/ReportCard';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorState } from '../components/ui/ErrorState';
 import { Skeleton } from '../components/ui/Skeleton';
 import { useApp } from '../context/AppContext';
+import * as reportsService from '../services/reports';
+import type { BeachReport } from '../types';
 
 interface FeedLocationState {
   newReportId?: string;
+  createdReport?: BeachReport;
 }
 
 export function FeedPage() {
-  const {
-    beaches,
-    reports,
-    flaggedReportIds,
-    flagReport,
-    isInitialLoading,
-    loadError,
-    refreshData,
-  } = useApp();
+  const { beaches, user } = useApp();
   const location = useLocation();
   const state = location.state as FeedLocationState | null;
 
@@ -31,18 +27,123 @@ export function FeedPage() {
   const [highlightedId, setHighlightedId] = useState<string | null>(
     state?.newReportId ?? null
   );
+  const [confirmedCreatedReport, setConfirmedCreatedReport] =
+    useState<BeachReport | null>(state?.createdReport ?? null);
+
+  const [items, setItems] = useState<BeachReport[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [loadReportsError, setLoadReportsError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [reportPendingDelete, setReportPendingDelete] = useState<string | null>(null);
 
   useEffect(() => {
     if (state?.newReportId) {
       setHighlightedId(state.newReportId);
       setSelectedBeachId('all');
     }
-  }, [state?.newReportId]);
+    if (state?.createdReport) {
+      setConfirmedCreatedReport(state.createdReport);
+    }
+  }, [state?.createdReport, state?.newReportId]);
 
-  const filteredReports = useMemo(() => {
-    if (selectedBeachId === 'all') return reports;
-    return reports.filter((r) => r.beachId === selectedBeachId);
-  }, [reports, selectedBeachId]);
+  const loadReportsPage = useCallback(
+    async (targetPage: number, beachFilter: string, append: boolean) => {
+      if (append) {
+        setIsLoadingMore(true);
+      } else {
+        setIsLoading(true);
+      }
+      setLoadReportsError(null);
+
+      try {
+        const result = await reportsService.getAllReports({
+          page: targetPage,
+          pageSize: reportsService.DEFAULT_REPORTS_PAGE_SIZE,
+          beachId: beachFilter === 'all' ? undefined : beachFilter,
+        });
+
+        setPage(result.page);
+        setHasMore(result.hasMore);
+
+        if (append) {
+          setItems((prev) => {
+            const seen = new Set(prev.map((r) => r.id));
+            const next = result.items.filter((r) => !seen.has(r.id));
+            return [...prev, ...next];
+          });
+          setTotalCount(result.totalCount);
+        } else {
+          let nextItems = result.items;
+          let nextTotal = result.totalCount;
+
+          if (
+            beachFilter === 'all' &&
+            confirmedCreatedReport &&
+            !nextItems.some((r) => r.id === confirmedCreatedReport.id)
+          ) {
+            nextItems = [confirmedCreatedReport, ...nextItems];
+            nextTotal = Math.max(nextTotal, nextItems.length);
+          }
+
+          setItems(nextItems);
+          setTotalCount(nextTotal);
+        }
+      } catch (err) {
+        if (!append) {
+          setItems([]);
+          setTotalCount(0);
+          setHasMore(false);
+        }
+        setLoadReportsError(
+          err instanceof Error
+            ? err.message
+            : 'Houve uma instabilidade temporária ao buscar os relatos da comunidade.'
+        );
+      } finally {
+        setIsLoading(false);
+        setIsLoadingMore(false);
+      }
+    },
+    [confirmedCreatedReport]
+  );
+
+  useEffect(() => {
+    void loadReportsPage(1, selectedBeachId, false);
+  }, [selectedBeachId, loadReportsPage]);
+
+  const handleLoadMore = () => {
+    if (isLoadingMore || !hasMore) return;
+    void loadReportsPage(page + 1, selectedBeachId, true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!reportPendingDelete) return;
+    const targetId = reportPendingDelete;
+    setReportPendingDelete(null);
+    setActionError(null);
+
+    try {
+      await reportsService.deleteReport(targetId);
+      setItems((prev) => prev.filter((r) => r.id !== targetId));
+      setTotalCount((prev) => Math.max(0, prev - 1));
+      if (confirmedCreatedReport?.id === targetId) {
+        setConfirmedCreatedReport(null);
+      }
+      if (highlightedId === targetId) {
+        setHighlightedId(null);
+      }
+    } catch (err) {
+      setActionError(
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível excluir o relato agora.'
+      );
+    }
+  };
 
   const selectedBeach = beaches.find((b) => b.id === selectedBeachId);
 
@@ -52,10 +153,15 @@ export function FeedPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-[#0F172A]">
-              Relatos da galera
+              Relatos da galera{' '}
+              {!isLoading && !loadReportsError && (
+                <span className="text-lg sm:text-xl font-semibold text-[#475569] tabular-nums">
+                  ({totalCount})
+                </span>
+              )}
             </h1>
             <p className="mt-1 text-sm text-[#475569]">
-              Fotos e impressões reais de quem está na areia agora.
+              Impressões reais de quem está na areia agora.
             </p>
           </div>
 
@@ -83,6 +189,26 @@ export function FeedPage() {
               onClick={() => setHighlightedId(null)}
               aria-label="Fechar aviso"
               className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg hover:bg-emerald-200/50 transition-colors"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+        )}
+
+        {actionError && (
+          <div
+            role="alert"
+            className="flex items-center justify-between gap-3 rounded-xl border border-[#EF4444]/30 bg-[#FEE2E2] px-4 py-2.5 text-sm font-medium text-[#991B1B]"
+          >
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span>{actionError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActionError(null)}
+              aria-label="Fechar erro"
+              className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg hover:bg-red-200/50 transition-colors"
             >
               <X className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -123,29 +249,33 @@ export function FeedPage() {
         </div>
 
         {/* Lista, loading, erro ou estado vazio */}
-        {isInitialLoading ? (
+        {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4" aria-busy="true">
             {[1, 2, 3, 4].map((n) => (
               <Card key={n} padding="md">
                 <div className="space-y-3">
                   <Skeleton className="h-10 w-48" />
-                  <Skeleton className="h-48 w-full rounded-xl" />
+                  <Skeleton className="h-4 w-full" />
                   <Skeleton className="h-4 w-3/4" />
                 </div>
               </Card>
             ))}
           </div>
-        ) : loadError ? (
+        ) : loadReportsError && items.length === 0 ? (
           <ErrorState
             title="Não foi possível carregar os relatos"
-            description="Houve uma instabilidade temporária ao buscar os relatos da comunidade."
-            onRetry={() => void refreshData()}
+            description={loadReportsError}
+            onRetry={() => void loadReportsPage(1, selectedBeachId, false)}
           />
-        ) : filteredReports.length === 0 ? (
+        ) : items.length === 0 ? (
           <EmptyState
             icon={<Star className="h-6 w-6" aria-hidden="true" />}
-            title={`Nenhum relato recente em ${selectedBeach?.name ?? 'essa praia'}`}
-            description="Ainda ninguém postou sobre essa praia hoje. Se você está por perto, compartilhe como está o mar."
+            title={
+              selectedBeach
+                ? `Nenhum relato recente em ${selectedBeach.name}`
+                : 'Ainda não há relatos publicados'
+            }
+            description="Ainda ninguém postou por aqui. Se você está perto da orla, compartilhe como está o mar."
             action={
               <>
                 <Link
@@ -164,19 +294,54 @@ export function FeedPage() {
             }
           />
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filteredReports.map((report) => (
-              <ReportCard
-                key={report.id}
-                report={report}
-                showBeachLink
-                highlighted={report.id === highlightedId}
-                isFlagged={flaggedReportIds.includes(report.id)}
-                onFlag={flagReport}
-              />
-            ))}
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {items.map((report) => (
+                <ReportCard
+                  key={report.id}
+                  report={report}
+                  showBeachLink
+                  highlighted={report.id === highlightedId}
+                  onDeleteRequest={
+                    user?.id === report.userId
+                      ? (id) => setReportPendingDelete(id)
+                      : undefined
+                  }
+                />
+              ))}
+            </div>
+
+            {loadReportsError && (
+              <p className="text-center text-xs font-medium text-[#991B1B]">
+                {loadReportsError}
+              </p>
+            )}
+
+            {hasMore && (
+              <div className="flex justify-center pt-1">
+                <Button
+                  variant="secondary"
+                  loading={isLoadingMore}
+                  disabled={isLoadingMore}
+                  onClick={handleLoadMore}
+                >
+                  {isLoadingMore ? 'Carregando...' : 'Carregar mais relatos'}
+                </Button>
+              </div>
+            )}
           </div>
         )}
+
+        <ConfirmModal
+          open={reportPendingDelete !== null}
+          title="Excluir este relato?"
+          description="Ele será removido permanentemente do feed e do seu perfil."
+          confirmLabel="Excluir relato"
+          cancelLabel="Manter"
+          destructive
+          onConfirm={handleConfirmDelete}
+          onCancel={() => setReportPendingDelete(null)}
+        />
       </div>
     </AppLayout>
   );
