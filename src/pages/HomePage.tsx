@@ -103,7 +103,7 @@ export function HomePage() {
 
   return (
     <AppLayout>
-      <div className="space-y-4 sm:space-y-5">
+      <div className="min-w-0 space-y-4 sm:space-y-5">
         {/* Cabeçalho da página */}
         <section className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -146,7 +146,7 @@ export function HomePage() {
           className="space-y-2.5"
         >
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
+            <div className="flex max-w-full items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
               {REGION_FILTER_OPTIONS.map((option) => {
                 const active = regionFilter === option.id;
                 return (
@@ -166,11 +166,11 @@ export function HomePage() {
               })}
             </div>
 
-            <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
-              <div className="flex items-center gap-2 shrink-0">
+            <div className="flex min-w-0 flex-col gap-2.5 sm:flex-row sm:items-center">
+              <div className="flex min-w-0 items-center gap-2">
                 <label
                   htmlFor="beach-sort-select"
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-[#475569] whitespace-nowrap"
+                  className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-[#475569] whitespace-nowrap"
                 >
                   <ArrowDownWideNarrow className="h-3.5 w-3.5 text-[#0284C7]" aria-hidden="true" />
                   Ordenar:
@@ -179,7 +179,7 @@ export function HomePage() {
                   id="beach-sort-select"
                   value={sortMode}
                   onChange={(e) => setSortMode(e.target.value as BeachSortMode)}
-                  className="min-h-[44px] flex-1 sm:flex-none rounded-xl border border-[#E2E8F0] bg-white px-3 text-sm font-semibold text-[#0F172A] focus:border-[#0284C7] focus:outline-none"
+                  className="min-h-[44px] min-w-0 flex-1 sm:flex-none rounded-xl border border-[#E2E8F0] bg-white px-3 text-sm font-semibold text-[#0F172A] focus:border-[#0284C7] focus:outline-none"
                 >
                   {SORT_OPTIONS.map((option) => (
                     <option key={option.id} value={option.id}>

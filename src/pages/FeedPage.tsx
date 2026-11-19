@@ -197,9 +197,9 @@ export function FeedPage() {
 
   return (
     <AppLayout>
-      <div className="space-y-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
+      <div className="min-w-0 space-y-5">
+        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
             <h1 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-[#0F172A]">
               Relatos da galera{' '}
               {!isLoading && !loadReportsError && (
@@ -228,15 +228,17 @@ export function FeedPage() {
             role="status"
             className="flex items-center justify-between gap-3 rounded-xl border border-[#10B981]/35 bg-[#DCFCE7] px-4 py-2.5 text-sm font-medium text-[#166534]"
           >
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
               <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-              <span>Seu relato foi publicado no topo do feed!</span>
+              <span className="min-w-0 break-words">
+                Seu relato foi publicado no topo do feed!
+              </span>
             </div>
             <button
               type="button"
               onClick={() => setHighlightedId(null)}
               aria-label="Fechar aviso"
-              className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg hover:bg-emerald-200/50 transition-colors"
+              className="min-h-[36px] min-w-[36px] shrink-0 flex items-center justify-center rounded-lg hover:bg-emerald-200/50 transition-colors"
             >
               <X className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -248,15 +250,15 @@ export function FeedPage() {
             role="alert"
             className="flex items-center justify-between gap-3 rounded-xl border border-[#EF4444]/30 bg-[#FEE2E2] px-4 py-2.5 text-sm font-medium text-[#991B1B]"
           >
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
               <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
-              <span>{actionError}</span>
+              <span className="min-w-0 break-words">{actionError}</span>
             </div>
             <button
               type="button"
               onClick={() => setActionError(null)}
               aria-label="Fechar erro"
-              className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg hover:bg-red-200/50 transition-colors"
+              className="min-h-[36px] min-w-[36px] shrink-0 flex items-center justify-center rounded-lg hover:bg-red-200/50 transition-colors"
             >
               <X className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -264,7 +266,7 @@ export function FeedPage() {
         )}
 
         {/* Filtro por praia */}
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
+        <div className="flex max-w-full items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
           <button
             type="button"
             onClick={() => setSelectedBeachId('all')}
@@ -348,7 +350,9 @@ export function FeedPage() {
                 role="alert"
                 className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#F59E0B]/40 bg-[#FEF3C7] px-3.5 py-2.5 text-xs sm:text-sm font-medium text-[#92400E]"
               >
-                <span>Não foi possível carregar as contagens de “Foi útil” agora.</span>
+                <span className="min-w-0 flex-1 break-words">
+                  Não foi possível carregar as contagens de “Foi útil” agora.
+                </span>
                 <Button
                   variant="secondary"
                   size="md"
@@ -360,7 +364,7 @@ export function FeedPage() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid min-w-0 grid-cols-1 md:grid-cols-2 gap-4">
               {items.map((report) => (
                 <ReportCard
                   key={report.id}

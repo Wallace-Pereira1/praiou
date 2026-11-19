@@ -77,13 +77,13 @@ export function ReportCard({
   return (
     <Card
       padding="md"
-      className={
+      className={`min-w-0 ${
         highlighted
           ? 'ring-2 ring-[#0284C7]/30 border-[#0284C7]'
           : ''
-      }
+      }`}
     >
-      <article>
+      <article className="min-w-0">
         {/* Cabeçalho do relato: no mobile coloca avaliação em sóis em linha própria; preserva desktop */}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
           <div className="flex items-start gap-3 min-w-0 flex-1">
@@ -102,23 +102,23 @@ export function ReportCard({
             )}
 
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="break-words sm:truncate text-sm font-bold text-[#0F172A]">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <p className="min-w-0 max-w-full break-words sm:truncate text-sm font-bold text-[#0F172A]">
                   {report.userName}
                 </p>
                 {highlighted && <Badge tone="ocean">Publicado agora</Badge>}
               </div>
-              <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-[#475569]">
+              <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-[#475569]">
                 {showBeachLink ? (
                   <Link
                     to={`/praia/${report.beachSlug}`}
-                    className="inline-flex items-center gap-1 font-semibold text-[#0284C7] hover:underline break-words"
+                    className="inline-flex min-w-0 max-w-full items-center gap-1 font-semibold text-[#0284C7] hover:underline break-words"
                   >
                     <MapPin className="h-3 w-3 shrink-0" aria-hidden="true" />
-                    <span>{report.beachName}</span>
+                    <span className="min-w-0 break-words">{report.beachName}</span>
                   </Link>
                 ) : (
-                  <span className="font-semibold text-[#0F172A] break-words">
+                  <span className="min-w-0 max-w-full font-semibold text-[#0F172A] break-words">
                     {report.beachName}
                   </span>
                 )}
@@ -251,7 +251,7 @@ export function ReportCard({
           >
             <div className="flex items-center gap-1.5 min-w-0">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              <span>{helpfulError}</span>
+              <span className="min-w-0 break-words">{helpfulError}</span>
             </div>
             {onDismissHelpfulError && (
               <button

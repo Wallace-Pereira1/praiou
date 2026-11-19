@@ -10,11 +10,9 @@
     font-family: var(--font-sans);
     background-color: #F8FAFC;
     color: #0F172A;
-    overflow-x: hidden;
   }
 
   body {
-    overflow-x: hidden;
     -webkit-tap-highlight-color: transparent;
   }
 

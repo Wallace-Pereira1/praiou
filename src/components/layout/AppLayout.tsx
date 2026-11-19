@@ -107,7 +107,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       </header>
 
       {/* Conteúdo principal com respiro inferior para a bottom nav e safe area no mobile */}
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] sm:px-6 md:pt-7 md:pb-12">
+      <main className="mx-auto w-full min-w-0 max-w-6xl flex-1 px-4 pt-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] sm:px-6 md:pt-7 md:pb-12">
         {children}
       </main>
 
