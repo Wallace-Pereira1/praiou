@@ -1,8 +1,10 @@
 import {
   AlertTriangle,
+  AtSign,
   Camera,
   Check,
   Image as ImageIcon,
+  Loader2,
   Trash2,
   X,
 } from 'lucide-react';
@@ -15,8 +17,14 @@ import {
   type FormEvent,
   type RefObject,
 } from 'react';
+import { checkUsernameAvailability } from '../../services/profiles';
 import type { AppUser } from '../../types';
 import { getInitials } from '../../utils/formatters';
+import {
+  USERNAME_MAX_LENGTH,
+  normalizeUsernameInput,
+  validateUsername,
+} from '../../utils/username';
 import { Button } from '../ui/Button';
 
 interface EditProfileModalProps {
@@ -40,6 +48,7 @@ interface EditProfileModalProps {
   onSelectBannerFile: (e: ChangeEvent<HTMLInputElement>) => void;
   onRemoveCustomBanner: () => Promise<void>;
   onSaveName: (displayName: string) => Promise<void>;
+  onSaveUsername: (username: string) => Promise<void>;
   onClose: () => void;
 }
 
@@ -64,6 +73,7 @@ export function EditProfileModal({
   onSelectBannerFile,
   onRemoveCustomBanner,
   onSaveName,
+  onSaveUsername,
   onClose,
 }: EditProfileModalProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -80,8 +90,24 @@ export function EditProfileModal({
   const [nameError, setNameError] = useState<string | null>(null);
   const [nameSuccessMessage, setNameSuccessMessage] = useState<string | null>(null);
 
+  const [draftUsername, setDraftUsername] = useState(user.username ?? '');
+  const [isSavingUsername, setIsSavingUsername] = useState(false);
+  const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [usernameSuccessMessage, setUsernameSuccessMessage] = useState<string | null>(
+    null
+  );
+  const [availabilityState, setAvailabilityState] = useState<
+    | { status: 'idle' }
+    | { status: 'checking'; target: string }
+    | { status: 'available'; target: string }
+    | { status: 'taken'; target: string }
+    | { status: 'unknown'; target: string }
+  >({ status: 'idle' });
+  const availabilityReqRef = useRef(0);
+
   const isBusy =
     isSavingName ||
+    isSavingUsername ||
     isUploadingAvatar ||
     isRemovingAvatar ||
     isUploadingBanner ||
@@ -100,8 +126,48 @@ export function EditProfileModal({
       setDraftName(user.name);
       setNameError(null);
       setNameSuccessMessage(null);
+      setDraftUsername(user.username ?? '');
+      setUsernameError(null);
+      setUsernameSuccessMessage(null);
+      setAvailabilityState({ status: 'idle' });
     }
-  }, [open, user.name]);
+  }, [open, user.name, user.username]);
+
+  // Verificação informativa de disponibilidade (a constraint do banco decide ao salvar)
+  useEffect(() => {
+    if (!open || suspended) return;
+
+    const { normalized, error } = validateUsername(draftUsername);
+    const currentUsername = user.username ?? '';
+
+    if (error || !normalized || normalized === currentUsername) {
+      availabilityReqRef.current += 1;
+      setAvailabilityState({ status: 'idle' });
+      return;
+    }
+
+    const reqId = ++availabilityReqRef.current;
+    setAvailabilityState({ status: 'checking', target: normalized });
+
+    const timer = window.setTimeout(() => {
+      void checkUsernameAvailability(normalized, user.id)
+        .then((res) => {
+          if (availabilityReqRef.current !== reqId) return;
+          setAvailabilityState({
+            status: res.available ? 'available' : 'taken',
+            target: res.normalized,
+          });
+        })
+        .catch(() => {
+          if (availabilityReqRef.current !== reqId) return;
+          setAvailabilityState({ status: 'unknown', target: normalized });
+        });
+    }, 380);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [open, suspended, draftUsername, user.username, user.id]);
 
   const handleRequestClose = useCallback(() => {
     if (isBusy) return;
@@ -205,6 +271,48 @@ export function EditProfileModal({
       setIsSavingName(false);
     }
   };
+
+  const handleSubmitUsername = async (e: FormEvent) => {
+    e.preventDefault();
+    if (isBusy || profileLoading) return;
+
+    const { normalized, error } = validateUsername(draftUsername);
+    if (error) {
+      setUsernameError(error);
+      setUsernameSuccessMessage(null);
+      return;
+    }
+
+    if (normalized === (user.username ?? '')) {
+      setDraftUsername(normalized);
+      setUsernameError(null);
+      setUsernameSuccessMessage('Este já é o seu @username atual.');
+      return;
+    }
+
+    setUsernameError(null);
+    setUsernameSuccessMessage(null);
+    setIsSavingUsername(true);
+
+    try {
+      await onSaveUsername(normalized);
+      setDraftUsername(normalized);
+      setAvailabilityState({ status: 'idle' });
+      setUsernameSuccessMessage(`@username atualizado para @${normalized}.`);
+    } catch (err) {
+      setUsernameError(
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível salvar seu @username agora.'
+      );
+    } finally {
+      setIsSavingUsername(false);
+    }
+  };
+
+  const normalizedDraftUsername = normalizeUsernameInput(draftUsername);
+  const showNormalizedPreview =
+    draftUsername.length > 0 && draftUsername !== normalizedDraftUsername;
 
   return (
     <div
@@ -535,6 +643,125 @@ export function EditProfileModal({
                 >
                   {!isSavingName && <Check className="h-4 w-4" aria-hidden="true" />}
                   {isSavingName ? 'Salvando nome...' : 'Salvar nome'}
+                </Button>
+              </div>
+            </form>
+          </section>
+
+          {/* Seção do @username público */}
+          <section
+            aria-labelledby="edit-username-heading"
+            className="space-y-3 rounded-xl border border-[#E2E8F0] bg-white p-4"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <label
+                id="edit-username-heading"
+                htmlFor="edit-profile-username-input"
+                className="text-sm font-bold text-[#0F172A]"
+              >
+                Identificador público (@username)
+              </label>
+              <span className="text-[11px] font-medium text-[#475569]">
+                Salvo ao confirmar
+              </span>
+            </div>
+
+            <form onSubmit={handleSubmitUsername} noValidate className="space-y-3">
+              <div className="flex min-h-[44px] items-center rounded-xl border border-[#CBD5E1] bg-white focus-within:border-[#0284C7] disabled:bg-slate-50">
+                <span
+                  aria-hidden="true"
+                  className="pl-3 pr-1 text-sm font-bold text-[#64748B] select-none"
+                >
+                  <AtSign className="h-4 w-4" />
+                </span>
+                <input
+                  id="edit-profile-username-input"
+                  type="text"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  value={draftUsername}
+                  onChange={(e) => {
+                    setDraftUsername(e.target.value);
+                    setUsernameError(null);
+                    setUsernameSuccessMessage(null);
+                  }}
+                  maxLength={USERNAME_MAX_LENGTH + 1}
+                  disabled={isBusy || profileLoading}
+                  placeholder="seu_nome_na_praia"
+                  className="min-h-[42px] w-full rounded-r-xl bg-transparent pr-3 text-sm font-semibold text-[#0F172A] placeholder:text-[#64748B]/70 focus:outline-none disabled:text-[#64748B]"
+                />
+              </div>
+
+              <p className="text-xs leading-relaxed text-[#475569]">
+                De 3 a 24 caracteres: letras minúsculas sem acento (a-z), números e underline (_).
+                {user.username ? ` Endereço atual: /u/${user.username}.` : ''}
+              </p>
+
+              {showNormalizedPreview && !usernameError && (
+                <p className="text-xs font-medium text-[#0284C7] break-all">
+                  Será salvo sem @ e em minúsculas: @{normalizedDraftUsername}
+                </p>
+              )}
+
+              {availabilityState.status === 'checking' && (
+                <p className="flex items-center gap-1.5 text-xs text-[#475569]">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" aria-hidden="true" />
+                  <span>Verificando disponibilidade...</span>
+                </p>
+              )}
+
+              {availabilityState.status === 'available' && !usernameError && (
+                <p className="flex items-center gap-1.5 text-xs font-medium text-[#065F46] break-all">
+                  <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span>
+                    @{availabilityState.target} parece disponível (confirmado ao salvar).
+                  </span>
+                </p>
+              )}
+
+              {availabilityState.status === 'taken' && !usernameError && (
+                <p className="flex items-center gap-1.5 text-xs font-medium text-[#991B1B] break-all">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span>@{availabilityState.target} já está em uso por outra conta.</span>
+                </p>
+              )}
+
+              {availabilityState.status === 'unknown' && !usernameError && (
+                <p className="text-xs text-[#64748B]">
+                  Não foi possível consultar disponibilidade agora; tente salvar para confirmar no banco.
+                </p>
+              )}
+
+              <div className="rounded-lg border border-amber-200/80 bg-amber-50/70 px-3 py-2 text-[11px] leading-relaxed text-[#92400E]">
+                Trocar seu @username altera o endereço público do seu perfil e o identificador anterior pode ficar disponível para outra pessoa, sem redirecionamento automático.
+              </div>
+
+              {usernameError && (
+                <p role="alert" className="text-xs font-medium text-[#991B1B]">
+                  {usernameError}
+                </p>
+              )}
+
+              {usernameSuccessMessage && !usernameError && (
+                <p
+                  role="status"
+                  className="flex items-center gap-1.5 text-xs font-semibold text-[#065F46] break-all"
+                >
+                  <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span>{usernameSuccessMessage}</span>
+                </p>
+              )}
+
+              <div className="flex justify-end">
+                <Button
+                  type="submit"
+                  size="md"
+                  loading={isSavingUsername}
+                  disabled={isBusy || profileLoading}
+                >
+                  {!isSavingUsername && <Check className="h-4 w-4" aria-hidden="true" />}
+                  {isSavingUsername ? 'Salvando @username...' : 'Salvar @username'}
                 </Button>
               </div>
             </form>

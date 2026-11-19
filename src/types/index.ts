@@ -53,6 +53,7 @@ export interface BeachSnapshot {
 export interface UserProfile {
   id: string;
   displayName: string;
+  username: string;
   avatarUrl?: string;
   externalAvatarUrl?: string;
   avatarPath?: string;
@@ -60,6 +61,19 @@ export interface UserProfile {
   bannerUrl?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PublicProfile {
+  id: string;
+  displayName: string;
+  username: string;
+  avatarUrl?: string;
+  bannerUrl?: string;
+}
+
+export interface PublicProfileStats {
+  visibleReportsCount: number;
+  evaluatedBeachesCount: number;
 }
 
 export type ReportModerationStatus = 'visible' | 'hidden';
@@ -85,6 +99,7 @@ export interface BeachReport {
   beachName: string;
   userId: string;
   userName: string;
+  userUsername?: string;
   userAvatarUrl?: string;
   rating: 1 | 2 | 3 | 4 | 5;
   comment: string;
@@ -163,6 +178,7 @@ export interface CreateReportFallbackDisplay {
   beachSlug: string;
   beachName: string;
   userName: string;
+  userUsername?: string;
   userAvatarUrl?: string;
 }
 
@@ -188,8 +204,8 @@ export interface PaginatedReportsResult {
 export interface AppUser {
   id: string;
   name: string;
-  email: string;
-  provider: 'google' | 'email';
+  username?: string;
+  provider: 'google';
   avatarUrl?: string;
   hasCustomAvatar?: boolean;
   bannerUrl?: string;

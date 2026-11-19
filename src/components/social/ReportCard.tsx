@@ -97,6 +97,9 @@ export function ReportCard({
   const isOwnReport = Boolean(currentUserId && currentUserId === report.userId);
   const isHiddenByModeration = report.moderationStatus === 'hidden';
   const showFlagMenu = !isOwnReport && !isHiddenByModeration && Boolean(onFlagRequest);
+  const authorProfileHref = report.userUsername
+    ? `/u/${encodeURIComponent(report.userUsername)}`
+    : null;
   const isReacted = Boolean(currentUserId && report.viewerHasReacted);
   const hasKnownHelpfulCount =
     typeof report.helpfulCount === 'number' && !report.helpfulLoadError;
@@ -113,6 +116,21 @@ export function ReportCard({
       ? `Remover marcação "Foi útil" do relato de ${report.userName}. ${helpfulCountAccessible}.`
       : `Marcar relato de ${report.userName} como "Foi útil". ${helpfulCountAccessible}.`;
 
+  const avatarVisual =
+    report.userAvatarUrl && !avatarError ? (
+      <img
+        src={report.userAvatarUrl}
+        alt={authorProfileHref ? '' : report.userName}
+        referrerPolicy="no-referrer"
+        onError={() => setAvatarError(true)}
+        className="h-10 w-10 shrink-0 rounded-full border border-sky-100 object-cover"
+      />
+    ) : (
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-50 text-xs font-bold text-[#0284C7] border border-sky-100">
+        {getInitials(report.userName)}
+      </div>
+    );
+
   return (
     <Card
       padding="md"
@@ -126,25 +144,42 @@ export function ReportCard({
         {/* Cabeçalho do relato: no mobile coloca avaliação em sóis em linha própria; preserva desktop */}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
           <div className="flex items-start gap-3 min-w-0 flex-1">
-            {report.userAvatarUrl && !avatarError ? (
-              <img
-                src={report.userAvatarUrl}
-                alt={report.userName}
-                referrerPolicy="no-referrer"
-                onError={() => setAvatarError(true)}
-                className="h-10 w-10 shrink-0 rounded-full border border-sky-100 object-cover"
-              />
+            {authorProfileHref ? (
+              <Link
+                to={authorProfileHref}
+                aria-label={`Ver perfil público de ${report.userName}`}
+                className="shrink-0 rounded-full focus-visible:outline-2 focus-visible:outline-[#0284C7] focus-visible:outline-offset-2"
+              >
+                {avatarVisual}
+              </Link>
             ) : (
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-50 text-xs font-bold text-[#0284C7] border border-sky-100">
-                {getInitials(report.userName)}
-              </div>
+              avatarVisual
             )}
 
             <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <p className="min-w-0 max-w-full break-words sm:truncate text-sm font-bold text-[#0F172A]">
-                  {report.userName}
-                </p>
+              <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                {authorProfileHref ? (
+                  <Link
+                    to={authorProfileHref}
+                    className="min-w-0 max-w-full break-words text-sm font-bold text-[#0F172A] hover:text-[#0284C7] hover:underline focus-visible:outline-2 focus-visible:outline-[#0284C7] rounded-sm"
+                  >
+                    {report.userName}
+                  </Link>
+                ) : (
+                  <p className="min-w-0 max-w-full break-words text-sm font-bold text-[#0F172A]">
+                    {report.userName}
+                  </p>
+                )}
+
+                {authorProfileHref && report.userUsername && (
+                  <Link
+                    to={authorProfileHref}
+                    className="min-w-0 max-w-full break-all text-xs font-medium text-[#475569] hover:text-[#0284C7] hover:underline focus-visible:outline-2 focus-visible:outline-[#0284C7] rounded-sm"
+                  >
+                    @{report.userUsername}
+                  </Link>
+                )}
+
                 {highlighted && <Badge tone="ocean">Publicado agora</Badge>}
               </div>
               <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-[#475569]">

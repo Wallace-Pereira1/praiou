@@ -192,6 +192,7 @@ export function NewReportPage() {
             beachSlug: selectedBeach?.slug ?? '',
             beachName: selectedBeach?.name ?? 'Praia do Rio',
             userName: user.name,
+            userUsername: user.username,
             userAvatarUrl: user.avatarUrl,
           },
         },

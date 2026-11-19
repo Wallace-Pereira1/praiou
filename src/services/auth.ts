@@ -26,8 +26,7 @@ export function mapSupabaseUserToAppUser(
     (typeof metadata.full_name === 'string' && metadata.full_name.trim()) ||
     (typeof metadata.name === 'string' && metadata.name.trim()) ||
     (typeof metadata.preferred_username === 'string' && metadata.preferred_username.trim()) ||
-    (sbUser.email ? sbUser.email.split('@')[0] : '') ||
-    'Usuário Google';
+    'Banhista';
 
   const rawAvatar =
     (typeof metadata.avatar_url === 'string' && metadata.avatar_url.trim()) ||
@@ -37,7 +36,6 @@ export function mapSupabaseUserToAppUser(
   return {
     id: sbUser.id,
     name: rawName,
-    email: sbUser.email ?? '',
     provider: 'google',
     avatarUrl: rawAvatar,
   };

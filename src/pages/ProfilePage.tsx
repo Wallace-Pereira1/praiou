@@ -1,10 +1,12 @@
 import {
   AlertTriangle,
+  Check,
   ChevronRight,
   Loader2,
   LogOut,
   Pencil,
   Plus,
+  Share2,
   ShieldCheck,
   User as UserIcon,
   X,
@@ -35,6 +37,7 @@ import { validateAvatarFile, validateBannerFile } from '../services/profiles';
 import * as reportsService from '../services/reports';
 import type { BeachReport } from '../types';
 import { getInitials } from '../utils/formatters';
+import { sharePublicProfile } from '../utils/shareProfile';
 
 export function ProfilePage() {
   const {
@@ -45,6 +48,7 @@ export function ProfilePage() {
     profileLoading,
     refreshProfile,
     updateProfileName,
+    updateProfileUsername,
     uploadProfileAvatar,
     removeProfileAvatar,
     uploadProfileBanner,
@@ -72,6 +76,11 @@ export function ProfilePage() {
   const [bannerSuccessMessage, setBannerSuccessMessage] = useState<string | null>(null);
   const [bannerCropError, setBannerCropError] = useState<string | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [shareFeedback, setShareFeedback] = useState<{
+    type: 'copied' | 'error';
+    message: string;
+  } | null>(null);
+  const shareTimerRef = useRef<number | null>(null);
 
   const [userReports, setUserReports] = useState<BeachReport[]>([]);
   const [userReportsTotal, setUserReportsTotal] = useState(0);
@@ -94,6 +103,14 @@ export function ProfilePage() {
   useEffect(() => {
     setBannerLoadError(false);
   }, [user?.bannerUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (shareTimerRef.current !== null) {
+        window.clearTimeout(shareTimerRef.current);
+      }
+    };
+  }, []);
 
   const loadUserReports = useCallback(
     async (userId: string, targetPage: number, append: boolean) => {
@@ -199,6 +216,48 @@ export function ProfilePage() {
         r.userId === updated.id ? { ...r, userName: updated.displayName } : r
       )
     );
+  };
+
+  const handleSaveUsername = async (username: string) => {
+    const updated = await updateProfileUsername(username);
+    setShareFeedback(null);
+    setUserReports((prev) =>
+      prev.map((r) =>
+        r.userId === updated.id ? { ...r, userUsername: updated.username } : r
+      )
+    );
+  };
+
+  const handleShareProfile = async () => {
+    if (!user?.username) return;
+    if (shareTimerRef.current !== null) {
+      window.clearTimeout(shareTimerRef.current);
+      shareTimerRef.current = null;
+    }
+
+    const result = await sharePublicProfile({
+      displayName: user.name,
+      username: user.username,
+    });
+
+    if (result.status === 'copied') {
+      setShareFeedback({
+        type: 'copied',
+        message: 'Link do perfil copiado para compartilhar.',
+      });
+      shareTimerRef.current = window.setTimeout(() => {
+        setShareFeedback(null);
+      }, 2600);
+    } else if (result.status === 'error') {
+      setShareFeedback({
+        type: 'error',
+        message:
+          result.errorMessage ??
+          'Não foi possível compartilhar o perfil agora.',
+      });
+    } else {
+      setShareFeedback(null);
+    }
   };
 
   const handleConfirmDelete = async () => {
@@ -456,8 +515,8 @@ export function ProfilePage() {
                   </div>
 
                   <div className="min-w-0 flex-1 sm:pb-0.5">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <h1 className="truncate font-display text-xl font-bold text-[#0F172A]">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <h1 className="min-w-0 max-w-full break-words font-display text-xl font-bold text-[#0F172A]">
                         {user.name}
                       </h1>
                       {!profileError && (
@@ -472,7 +531,7 @@ export function ProfilePage() {
                             setIsEditProfileOpen(true);
                           }}
                           aria-label="Editar perfil"
-                          className="min-h-[44px] inline-flex items-center gap-1 rounded-xl px-2.5 text-xs font-semibold text-[#0284C7] hover:bg-sky-50 transition-colors"
+                          className="min-h-[44px] inline-flex items-center gap-1 rounded-xl px-2.5 text-xs font-semibold text-[#0284C7] hover:bg-sky-50 transition-colors shrink-0"
                         >
                           <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                           Editar perfil
@@ -480,25 +539,76 @@ export function ProfilePage() {
                       )}
                     </div>
 
-                    <p className="mt-0.5 truncate text-sm text-[#475569]">
-                      {user.email ? `${user.email} · ` : ''}Conta Google
-                    </p>
+                    <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-[#475569]">
+                      {user.username ? (
+                        <Link
+                          to={`/u/${encodeURIComponent(user.username)}`}
+                          className="min-w-0 max-w-full break-all font-semibold text-[#0284C7] hover:underline focus-visible:outline-2 focus-visible:outline-[#0284C7] rounded-sm"
+                        >
+                          @{user.username}
+                        </Link>
+                      ) : profileLoading ? (
+                        <span className="text-xs text-[#64748B]">
+                          Carregando @username...
+                        </span>
+                      ) : null}
+                      {user.username && <span aria-hidden="true">·</span>}
+                      <span>Conta Google</span>
+                    </div>
                   </div>
                 </div>
 
-                <Button
-                  variant="secondary"
-                  loading={isLoggingOut}
-                  disabled={isLoggingOut}
-                  onClick={handleLogout}
-                  className="self-start sm:self-auto"
-                >
-                  {!isLoggingOut && (
-                    <LogOut className="h-4 w-4 text-[#475569]" aria-hidden="true" />
+                <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto shrink-0">
+                  {user.username && (
+                    <Button
+                      variant="secondary"
+                      onClick={() => void handleShareProfile()}
+                    >
+                      {shareFeedback?.type === 'copied' ? (
+                        <Check className="h-4 w-4 text-[#166534]" aria-hidden="true" />
+                      ) : (
+                        <Share2 className="h-4 w-4 text-[#0284C7]" aria-hidden="true" />
+                      )}
+                      {shareFeedback?.type === 'copied'
+                        ? 'Link copiado'
+                        : 'Compartilhar perfil'}
+                    </Button>
                   )}
-                  {isLoggingOut ? 'Saindo...' : 'Sair'}
-                </Button>
+
+                  <Button
+                    variant="secondary"
+                    loading={isLoggingOut}
+                    disabled={isLoggingOut}
+                    onClick={handleLogout}
+                  >
+                    {!isLoggingOut && (
+                      <LogOut className="h-4 w-4 text-[#475569]" aria-hidden="true" />
+                    )}
+                    {isLoggingOut ? 'Saindo...' : 'Sair'}
+                  </Button>
+                </div>
               </div>
+
+              {shareFeedback && (
+                <div
+                  role={shareFeedback.type === 'error' ? 'alert' : 'status'}
+                  className={`mt-3 flex items-center justify-between gap-2 rounded-xl border px-3.5 py-2 text-xs font-medium ${
+                    shareFeedback.type === 'error'
+                      ? 'border-[#EF4444]/30 bg-[#FEE2E2] text-[#991B1B]'
+                      : 'border-[#0284C7]/30 bg-sky-50 text-[#0284C7]'
+                  }`}
+                >
+                  <span className="min-w-0 break-words">{shareFeedback.message}</span>
+                  <button
+                    type="button"
+                    onClick={() => setShareFeedback(null)}
+                    aria-label="Fechar aviso"
+                    className="shrink-0 font-bold underline"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              )}
 
               <div className="mt-5 grid grid-cols-2 gap-4 border-t border-slate-100 pt-4">
                 <div>
@@ -693,6 +803,7 @@ export function ProfilePage() {
             onSelectBannerFile={handleSelectBannerFile}
             onRemoveCustomBanner={handleRemoveCustomBanner}
             onSaveName={handleSaveName}
+            onSaveUsername={handleSaveUsername}
             onClose={() => {
               setIsEditProfileOpen(false);
               setAvatarActionError(null);

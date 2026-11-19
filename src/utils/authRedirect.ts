@@ -7,6 +7,7 @@ const ALLOWED_EXACT_RETURN_PATHS = new Set([
   '/moderacao',
 ]);
 const ALLOWED_BEACH_PATH_REGEX = /^\/praia\/[a-z0-9-]+$/;
+const ALLOWED_PUBLIC_PROFILE_PATH_REGEX = /^\/u\/@?[a-zA-Z0-9_]{3,24}$/;
 
 export function sanitizeInternalReturnPath(
   rawPath: string | null | undefined,
@@ -34,7 +35,8 @@ export function sanitizeInternalReturnPath(
     const { pathname, search, hash } = parsed;
     const isAllowed =
       ALLOWED_EXACT_RETURN_PATHS.has(pathname) ||
-      ALLOWED_BEACH_PATH_REGEX.test(pathname);
+      ALLOWED_BEACH_PATH_REGEX.test(pathname) ||
+      ALLOWED_PUBLIC_PROFILE_PATH_REGEX.test(pathname);
 
     if (!isAllowed) {
       return fallback;

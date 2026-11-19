@@ -40,6 +40,7 @@ interface AppContextValue {
   refreshData: (forceRefresh?: boolean) => Promise<void>;
   refreshProfile: () => Promise<void>;
   updateProfileName: (displayName: string) => Promise<UserProfile>;
+  updateProfileUsername: (username: string) => Promise<UserProfile>;
   uploadProfileAvatar: (blob: Blob) => Promise<UserProfile>;
   removeProfileAvatar: () => Promise<UserProfile>;
   uploadProfileBanner: (blob: Blob) => Promise<UserProfile>;
@@ -190,6 +191,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  const updateProfileUsername = useCallback(
+    async (username: string): Promise<UserProfile> => {
+      const updated = await profilesService.updateOwnUsername(username);
+      setProfile(updated);
+      setProfileError(null);
+      return updated;
+    },
+    []
+  );
+
   const uploadProfileAvatar = useCallback(async (blob: Blob): Promise<UserProfile> => {
     const updated = await profilesService.uploadOwnAvatar(blob);
     setProfile(updated);
@@ -289,6 +300,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return {
       ...authUser,
       name: profile?.displayName ?? authUser.name,
+      username: profile?.username,
       avatarUrl: profile?.avatarUrl ?? authUser.avatarUrl,
       hasCustomAvatar: Boolean(profile?.avatarPath),
       bannerUrl: profile?.bannerUrl,
@@ -316,6 +328,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         refreshData,
         refreshProfile,
         updateProfileName,
+        updateProfileUsername,
         uploadProfileAvatar,
         removeProfileAvatar,
         uploadProfileBanner,

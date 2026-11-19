@@ -12,7 +12,7 @@ import {
   validateReportImageFile,
 } from '../utils/reportImage';
 import { getMyFlaggedReportIds } from './moderation';
-import { resolveProfileAvatarUrl } from './profiles';
+import { getPublicProfileStats, resolveProfileAvatarUrl } from './profiles';
 
 export const DEFAULT_REPORTS_PAGE_SIZE = 20;
 const MAX_HELPFUL_SUMMARY_BATCH = 50;
@@ -62,6 +62,7 @@ export class ReportPublishError extends Error {
 interface JoinedProfileRow {
   id: string;
   display_name: string | null;
+  username: string | null;
   avatar_url: string | null;
   avatar_path: string | null;
 }
@@ -111,6 +112,7 @@ const REPORT_SELECT = `
   profiles:user_id (
     id,
     display_name,
+    username,
     avatar_url,
     avatar_path
   ),
@@ -169,6 +171,10 @@ function mapSupabaseReport(
       profile?.display_name?.trim() ||
       fallbackDisplay?.userName?.trim() ||
       'Banhista',
+    userUsername:
+      profile?.username?.trim() ||
+      fallbackDisplay?.userUsername?.trim() ||
+      undefined,
     userAvatarUrl:
       resolveProfileAvatarUrl(profile?.avatar_path, profile?.avatar_url) ??
       fallbackDisplay?.userAvatarUrl,
@@ -476,28 +482,16 @@ export async function getReportsByUser(
   return fetchPaginatedReports({ ...options, userId });
 }
 
+export async function getPublicReportsByUser(
+  userId: string,
+  options: { page?: number; pageSize?: number } = {}
+): Promise<PaginatedReportsResult> {
+  return fetchPaginatedReports({ ...options, userId, onlyVisible: true });
+}
+
 export async function getUserEvaluatedBeachesCount(userId: string): Promise<number> {
-  if (!supabase) {
-    throw new Error('Conexão com o Supabase não configurada.');
-  }
-
-  const { data, error } = await supabase
-    .from('beach_reports')
-    .select('beach_id')
-    .eq('user_id', userId)
-    .eq('moderation_status', 'visible')
-    .limit(1000);
-
-  if (error) {
-    throw new Error('Não foi possível contabilizar as praias avaliadas.');
-  }
-
-  const distinctBeaches = new Set(
-    (data ?? [])
-      .map((row) => (row as { beach_id?: string }).beach_id)
-      .filter((id): id is string => Boolean(id))
-  );
-  return distinctBeaches.size;
+  const stats = await getPublicProfileStats(userId);
+  return stats.evaluatedBeachesCount;
 }
 
 async function tryRemoveReportPhoto(photoPath?: string | null): Promise<boolean> {
