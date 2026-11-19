@@ -11,6 +11,7 @@ import {
   getExtensionForMimeType,
   validateReportImageFile,
 } from '../utils/reportImage';
+import { getMyFlaggedReportIds } from './moderation';
 import { resolveProfileAvatarUrl } from './profiles';
 
 export const DEFAULT_REPORTS_PAGE_SIZE = 20;
@@ -79,6 +80,8 @@ interface BaseBeachReportRow {
   comment: string | null;
   photo_path: string | null;
   created_at: string;
+  moderation_status?: string | null;
+  moderated_at?: string | null;
 }
 
 interface SupabaseBeachReportRow extends BaseBeachReportRow {
@@ -93,7 +96,7 @@ interface HelpfulSummaryRpcRow {
 }
 
 const BASE_REPORT_SELECT =
-  'id, beach_id, user_id, rating, comment, photo_path, created_at';
+  'id, beach_id, user_id, rating, comment, photo_path, created_at, moderation_status, moderated_at';
 
 const REPORT_SELECT = `
   id,
@@ -103,6 +106,8 @@ const REPORT_SELECT = `
   comment,
   photo_path,
   created_at,
+  moderation_status,
+  moderated_at,
   profiles:user_id (
     id,
     display_name,
@@ -145,7 +150,8 @@ function mapSupabaseReport(
   row: SupabaseBeachReportRow,
   fallbackDisplay?: CreateReportFallbackDisplay,
   helpfulSummary?: HelpfulReactionSummary,
-  helpfulLoadError = false
+  helpfulLoadError = false,
+  viewerHasFlagged = false
 ): BeachReport {
   const profile = unwrapRelation(row.profiles);
   const beach = unwrapRelation(row.beaches);
@@ -172,11 +178,14 @@ function mapSupabaseReport(
     photoUrl,
     photoAlt: photoUrl ? `Foto enviada no relato sobre ${beachName}` : undefined,
     createdAt: row.created_at,
+    moderationStatus: row.moderation_status === 'hidden' ? 'hidden' : 'visible',
+    moderatedAt: row.moderated_at ?? undefined,
     helpfulCount: helpfulLoadError ? null : (helpfulSummary?.helpfulCount ?? 0),
     viewerHasReacted: helpfulLoadError
       ? false
       : (helpfulSummary?.viewerHasReacted ?? false),
     helpfulLoadError,
+    viewerHasFlagged,
   };
 }
 
@@ -262,7 +271,16 @@ export async function markReportHelpful(
 
     if (insertError.code === '42501') {
       throw new HelpfulReactionMutationError(
-        'Não é possível marcar o próprio relato como útil.',
+        reconciled
+          ? 'Não é possível marcar o próprio relato como útil.'
+          : 'Este relato não está mais disponível para marcações.',
+        reconciled
+      );
+    }
+
+    if (insertError.code === 'P0002') {
+      throw new HelpfulReactionMutationError(
+        'Este relato não está mais disponível.',
         reconciled
       );
     }
@@ -351,6 +369,7 @@ interface FetchReportsOptions {
   pageSize?: number;
   beachId?: string;
   userId?: string;
+  onlyVisible?: boolean;
 }
 
 async function fetchPaginatedReports(
@@ -375,6 +394,10 @@ async function fetchPaginatedReports(
     .order('id', { ascending: false })
     .range(from, to);
 
+  if (options.onlyVisible) {
+    query = query.eq('moderation_status', 'visible');
+  }
+
   if (options.beachId) {
     query = query.eq('beach_id', options.beachId);
   }
@@ -394,12 +417,22 @@ async function fetchPaginatedReports(
 
   let helpfulMap = new Map<string, HelpfulReactionSummary>();
   let helpfulLoadError = false;
+  let flaggedSet = new Set<string>();
 
   if (reportIds.length > 0) {
-    try {
-      helpfulMap = await getReportHelpfulSummaries(reportIds);
-    } catch {
+    const [helpfulOutcome, flaggedOutcome] = await Promise.allSettled([
+      getReportHelpfulSummaries(reportIds),
+      getMyFlaggedReportIds(reportIds),
+    ]);
+
+    if (helpfulOutcome.status === 'fulfilled') {
+      helpfulMap = helpfulOutcome.value;
+    } else {
       helpfulLoadError = true;
+    }
+
+    if (flaggedOutcome.status === 'fulfilled') {
+      flaggedSet = flaggedOutcome.value;
     }
   }
 
@@ -408,7 +441,8 @@ async function fetchPaginatedReports(
       row,
       undefined,
       helpfulMap.get(row.id),
-      helpfulLoadError
+      helpfulLoadError,
+      flaggedSet.has(row.id)
     )
   );
   const totalCount = typeof count === 'number' ? count : items.length;
@@ -425,14 +459,14 @@ async function fetchPaginatedReports(
 export async function getAllReports(
   options: { page?: number; pageSize?: number; beachId?: string } = {}
 ): Promise<PaginatedReportsResult> {
-  return fetchPaginatedReports(options);
+  return fetchPaginatedReports({ ...options, onlyVisible: true });
 }
 
 export async function getReportsByBeach(
   beachId: string,
   options: { page?: number; pageSize?: number } = {}
 ): Promise<PaginatedReportsResult> {
-  return fetchPaginatedReports({ ...options, beachId });
+  return fetchPaginatedReports({ ...options, beachId, onlyVisible: true });
 }
 
 export async function getReportsByUser(
@@ -451,6 +485,7 @@ export async function getUserEvaluatedBeachesCount(userId: string): Promise<numb
     .from('beach_reports')
     .select('beach_id')
     .eq('user_id', userId)
+    .eq('moderation_status', 'visible')
     .limit(1000);
 
   if (error) {

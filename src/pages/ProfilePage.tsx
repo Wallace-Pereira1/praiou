@@ -1,9 +1,11 @@
 import {
   AlertTriangle,
+  ChevronRight,
   Loader2,
   LogOut,
   Pencil,
   Plus,
+  ShieldCheck,
   User as UserIcon,
   X,
 } from 'lucide-react';
@@ -37,6 +39,7 @@ import { getInitials } from '../utils/formatters';
 export function ProfilePage() {
   const {
     user,
+    isModerator,
     authReady,
     profileError,
     profileLoading,
@@ -517,6 +520,28 @@ export function ProfilePage() {
               </div>
             </div>
           </Card>
+
+          {isModerator && (
+            <Link
+              to="/moderacao"
+              className="flex items-center justify-between gap-3 rounded-2xl border border-[#0284C7]/35 bg-sky-50/70 px-4 py-3.5 text-[#0F172A] hover:border-[#0284C7] hover:bg-sky-50 transition-colors"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white border border-sky-200 text-[#0284C7]">
+                  <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <div className="min-w-0">
+                  <p className="font-display text-sm font-bold text-[#0F172A]">
+                    Área de moderação
+                  </p>
+                  <p className="text-xs text-[#475569]">
+                    Revisar relatos denunciados, ocultar publicações ou restaurar conteúdo.
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className="h-4 w-4 shrink-0 text-[#0284C7]" aria-hidden="true" />
+            </Link>
+          )}
 
           {/* Lista de relatos do usuário */}
           <section className="space-y-3.5">

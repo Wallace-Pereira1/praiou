@@ -11,6 +11,7 @@ import { BeachDetailPage } from './pages/BeachDetailPage';
 import { FeedPage } from './pages/FeedPage';
 import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/LoginPage';
+import { ModerationPage } from './pages/ModerationPage';
 import { NewReportPage } from './pages/NewReportPage';
 import { ProfilePage } from './pages/ProfilePage';
 
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="/entrar" element={<LoginPage />} />
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
           <Route path="/perfil" element={<ProfilePage />} />
+          <Route path="/moderacao" element={<ModerationPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

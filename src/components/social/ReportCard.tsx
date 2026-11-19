@@ -1,10 +1,13 @@
 import {
   AlertTriangle,
   Check,
+  EyeOff,
+  Flag,
   ImageOff,
   Loader2,
   MapPin,
   Maximize2,
+  MoreHorizontal,
   ThumbsUp,
   Trash2,
 } from 'lucide-react';
@@ -26,6 +29,7 @@ interface ReportCardProps {
   helpfulError?: string | null;
   onToggleHelpful?: (report: BeachReport) => void;
   onDismissHelpfulError?: (reportId: string) => void;
+  onFlagRequest?: (report: BeachReport) => void;
   onDeleteRequest?: (reportId: string) => void;
 }
 
@@ -38,12 +42,16 @@ export function ReportCard({
   helpfulError = null,
   onToggleHelpful,
   onDismissHelpfulError,
+  onFlagRequest,
   onDeleteRequest,
 }: ReportCardProps) {
   const [avatarError, setAvatarError] = useState(false);
   const [photoError, setPhotoError] = useState(false);
   const [isPhotoViewerOpen, setIsPhotoViewerOpen] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const photoButtonRef = useRef<HTMLButtonElement | null>(null);
+  const menuContainerRef = useRef<HTMLDivElement | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     setAvatarError(false);
@@ -54,10 +62,41 @@ export function ReportCard({
     setIsPhotoViewerOpen(false);
   }, [report.photoUrl]);
 
+  useEffect(() => {
+    if (!isMenuOpen) return;
+
+    const handlePointerDown = (e: MouseEvent | TouchEvent) => {
+      if (
+        menuContainerRef.current &&
+        !menuContainerRef.current.contains(e.target as Node)
+      ) {
+        setIsMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsMenuOpen(false);
+        menuButtonRef.current?.focus();
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isMenuOpen]);
+
   const photoAlt =
     report.photoAlt ?? `Foto enviada no relato sobre ${report.beachName}`;
 
   const isOwnReport = Boolean(currentUserId && currentUserId === report.userId);
+  const isHiddenByModeration = report.moderationStatus === 'hidden';
+  const showFlagMenu = !isOwnReport && !isHiddenByModeration && Boolean(onFlagRequest);
   const isReacted = Boolean(currentUserId && report.viewerHasReacted);
   const hasKnownHelpfulCount =
     typeof report.helpfulCount === 'number' && !report.helpfulLoadError;
@@ -134,6 +173,22 @@ export function ReportCard({
             <SunRatingDisplay rating={report.rating} />
           </div>
         </div>
+
+        {/* Aviso restrito ao autor quando o relato está ocultado pela moderação */}
+        {isOwnReport && isHiddenByModeration && (
+          <div
+            role="status"
+            className="mt-3 flex items-start gap-2.5 rounded-xl border border-[#F59E0B]/40 bg-[#FEF3C7] px-3.5 py-2.5 text-xs font-medium text-[#92400E]"
+          >
+            <EyeOff className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
+            <div className="min-w-0 space-y-0.5">
+              <p className="font-bold">Relato ocultado pela moderação</p>
+              <p className="leading-relaxed">
+                Este conteúdo foi retirado das listas públicas do Praiou? e não recebe novas interações. Você pode excluí-lo quando quiser.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Comentário do usuário */}
         {report.comment && (
@@ -232,16 +287,66 @@ export function ReportCard({
             </button>
           )}
 
-          {onDeleteRequest && (
-            <button
-              type="button"
-              onClick={() => onDeleteRequest(report.id)}
-              className="min-h-[44px] inline-flex items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-[#991B1B] hover:bg-[#FEE2E2]/60 transition-colors"
-            >
-              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-              Excluir
-            </button>
-          )}
+          <div className="flex items-center gap-1.5">
+            {showFlagMenu && (
+              <div ref={menuContainerRef} className="relative">
+                <button
+                  ref={menuButtonRef}
+                  type="button"
+                  aria-label={`Mais opções para o relato de ${report.userName}`}
+                  aria-haspopup="menu"
+                  aria-expanded={isMenuOpen}
+                  onClick={() => setIsMenuOpen((prev) => !prev)}
+                  className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl text-[#475569] hover:bg-slate-100 hover:text-[#0F172A] focus-visible:outline-2 focus-visible:outline-[#0284C7] transition-colors"
+                >
+                  <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                </button>
+
+                {isMenuOpen && (
+                  <div
+                    role="menu"
+                    aria-label="Opções do relato"
+                    className="absolute right-0 bottom-full z-20 mb-1.5 w-52 rounded-xl border border-[#E2E8F0] bg-white p-1.5 shadow-lg"
+                  >
+                    {Boolean(currentUserId && report.viewerHasFlagged) ? (
+                      <div
+                        role="menuitem"
+                        aria-disabled="true"
+                        className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-[#64748B]"
+                      >
+                        <Check className="h-3.5 w-3.5 text-[#166534]" aria-hidden="true" />
+                        <span>Você já denunciou</span>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setIsMenuOpen(false);
+                          onFlagRequest?.(report);
+                        }}
+                        className="flex min-h-[40px] w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#0F172A] hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-[#0284C7] transition-colors"
+                      >
+                        <Flag className="h-3.5 w-3.5 text-[#92400E]" aria-hidden="true" />
+                        <span>Denunciar relato</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {onDeleteRequest && (
+              <button
+                type="button"
+                onClick={() => onDeleteRequest(report.id)}
+                className="min-h-[44px] inline-flex items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-[#991B1B] hover:bg-[#FEE2E2]/60 transition-colors"
+              >
+                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                Excluir
+              </button>
+            )}
+          </div>
         </div>
 
         {helpfulError && (

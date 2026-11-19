@@ -10,6 +10,7 @@ import {
 } from 'react';
 import * as authService from '../services/auth';
 import * as beachesService from '../services/beaches';
+import * as moderationService from '../services/moderation';
 import * as profilesService from '../services/profiles';
 import * as snapshotsService from '../services/snapshots';
 import type {
@@ -28,6 +29,8 @@ interface AppContextValue {
   profile: UserProfile | null;
   profileLoading: boolean;
   profileError: string | null;
+  isModerator: boolean;
+  moderatorReady: boolean;
   authReady: boolean;
   isInitialLoading: boolean;
   loadError: string | null;
@@ -55,6 +58,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [isModerator, setIsModerator] = useState(false);
+  const [moderatorReady, setModeratorReady] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -62,6 +67,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Evita que uma leitura inicial lenta sobrescreva eventos mais recentes de autenticação
   const authEpochRef = useRef(0);
   const profileRequestRef = useRef(0);
+  const moderatorRequestRef = useRef(0);
 
   const [safetyBannerDismissed, setSafetyBannerDismissed] = useState<boolean>(() => {
     try {
@@ -82,6 +88,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setProfile(null);
         setProfileError(null);
         setProfileLoading(false);
+        setIsModerator(false);
+        setModeratorReady(true);
+      } else {
+        setModeratorReady(false);
       }
       setAuthReady(true);
     });
@@ -138,13 +148,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     if (!authUser?.id) {
       profileRequestRef.current += 1;
+      moderatorRequestRef.current += 1;
       setProfile(null);
       setProfileError(null);
       setProfileLoading(false);
+      setIsModerator(false);
+      setModeratorReady(true);
       return;
     }
 
     void fetchProfileForUser(authUser.id);
+
+    const modReqId = ++moderatorRequestRef.current;
+    setModeratorReady(false);
+    void moderationService
+      .checkIsCurrentUserModerator()
+      .then((allowed) => {
+        if (moderatorRequestRef.current !== modReqId) return;
+        setIsModerator(allowed);
+        setModeratorReady(true);
+      })
+      .catch(() => {
+        if (moderatorRequestRef.current !== modReqId) return;
+        setIsModerator(false);
+        setModeratorReady(true);
+      });
   }, [authReady, authUser?.id, fetchProfileForUser]);
 
   const refreshProfile = useCallback(async () => {
@@ -246,10 +274,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await authService.signOut();
     authEpochRef.current += 1;
     profileRequestRef.current += 1;
+    moderatorRequestRef.current += 1;
     setAuthUser(null);
     setProfile(null);
     setProfileError(null);
     setProfileLoading(false);
+    setIsModerator(false);
+    setModeratorReady(true);
     setAuthReady(true);
   }, []);
 
@@ -274,6 +305,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         profile,
         profileLoading,
         profileError,
+        isModerator,
+        moderatorReady,
         authReady,
         isInitialLoading,
         loadError,

@@ -19,6 +19,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { SafetyNotice } from '../components/layout/SafetyNotice';
 import { ReportCard } from '../components/social/ReportCard';
+import { ReportFlagModal } from '../components/social/ReportFlagModal';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
@@ -28,6 +29,7 @@ import { Skeleton } from '../components/ui/Skeleton';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { WeatherIcon } from '../components/ui/WeatherIcon';
 import { useApp } from '../context/AppContext';
+import { useReportFlagActions } from '../hooks/useReportFlagActions';
 import { useReportHelpfulActions } from '../hooks/useReportHelpfulActions';
 import * as reportsService from '../services/reports';
 import type { BeachReport } from '../types';
@@ -159,6 +161,12 @@ export function BeachDetailPage() {
     userId: user?.id ?? null,
     authReady,
     items: beachReports,
+    setItems: setBeachReports,
+    returnTo: `${location.pathname}${location.search}`,
+  });
+
+  const flagActions = useReportFlagActions({
+    userId: user?.id ?? null,
     setItems: setBeachReports,
     returnTo: `${location.pathname}${location.search}`,
   });
@@ -655,6 +663,11 @@ export function BeachDetailPage() {
                       helpfulError={helpfulActions.helpfulErrorById[report.id] ?? null}
                       onToggleHelpful={helpfulActions.handleToggleHelpful}
                       onDismissHelpfulError={helpfulActions.dismissHelpfulError}
+                      onFlagRequest={
+                        user?.id !== report.userId
+                          ? flagActions.handleOpenFlagModal
+                          : undefined
+                      }
                       onDeleteRequest={
                         user?.id === report.userId
                           ? (id) => setReportPendingDelete(id)
@@ -699,6 +712,12 @@ export function BeachDetailPage() {
           </>
         )}
       </main>
+
+      <ReportFlagModal
+        report={flagActions.flagTargetReport}
+        onClose={flagActions.handleCloseFlagModal}
+        onFlagSuccess={flagActions.handleFlagSuccess}
+      />
 
       <ConfirmModal
         open={reportPendingDelete !== null}

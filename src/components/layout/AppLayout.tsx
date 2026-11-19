@@ -9,7 +9,7 @@ interface AppLayoutProps {
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
-  const { user } = useApp();
+  const { user, isModerator } = useApp();
   const [avatarError, setAvatarError] = useState(false);
 
   useEffect(() => {
@@ -69,6 +69,20 @@ export function AppLayout({ children }: AppLayoutProps) {
             >
               Perfil
             </NavLink>
+            {isModerator && (
+              <NavLink
+                to="/moderacao"
+                className={({ isActive }) =>
+                  `py-1.5 whitespace-nowrap shrink-0 transition-colors border-b-2 ${
+                    isActive
+                      ? 'border-[#0284C7] text-[#0F172A] font-semibold'
+                      : 'border-transparent hover:text-[#0F172A]'
+                  }`
+                }
+              >
+                Moderação
+              </NavLink>
+            )}
           </nav>
 
           <div className="flex items-center shrink-0">

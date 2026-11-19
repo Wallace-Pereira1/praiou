@@ -62,6 +62,22 @@ export interface UserProfile {
   updatedAt: string;
 }
 
+export type ReportModerationStatus = 'visible' | 'hidden';
+
+export type ReportFlagReason =
+  | 'spam'
+  | 'harassment'
+  | 'inappropriate_media'
+  | 'personal_data'
+  | 'misleading_or_dangerous'
+  | 'other';
+
+export type ReportFlagStatus = 'pending' | 'resolved_kept' | 'resolved_hidden';
+
+export type ModerationAction = 'keep_visible' | 'hide' | 'restore';
+
+export type ModerationQueueFilter = 'pending' | 'resolved';
+
 export interface BeachReport {
   id: string;
   beachId: string;
@@ -76,10 +92,71 @@ export interface BeachReport {
   photoUrl?: string;
   photoAlt?: string;
   createdAt: string;
+  moderationStatus?: ReportModerationStatus;
+  moderatedAt?: string;
   helpfulCount?: number | null;
   viewerHasReacted?: boolean;
   helpfulLoadError?: boolean;
+  viewerHasFlagged?: boolean;
   flagsCount?: number;
+}
+
+export interface ModerationReasonCount {
+  reason: ReportFlagReason;
+  count: number;
+}
+
+export interface ModerationFlagItem {
+  id: string;
+  reason: ReportFlagReason;
+  details?: string;
+  status: ReportFlagStatus;
+  createdAt: string;
+  reporterName: string;
+}
+
+export interface ModerationLogItem {
+  id: string;
+  action: ModerationAction;
+  reason?: string;
+  flagsResolvedCount: number;
+  createdAt: string;
+  moderatorName: string;
+}
+
+export interface ModerationReportItem {
+  reportId: string;
+  beachId: string;
+  beachSlug: string;
+  beachName: string;
+  authorId: string;
+  authorName: string;
+  authorAvatarUrl?: string;
+  rating: 1 | 2 | 3 | 4 | 5;
+  comment: string;
+  photoPath?: string;
+  photoUrl?: string;
+  reportCreatedAt: string;
+  moderationStatus: ReportModerationStatus;
+  moderatedAt?: string;
+  pendingFlagsCount: number;
+  totalFlagsCount: number;
+  latestFlagAt?: string;
+  helpfulCount: number;
+  reasonSummary: ModerationReasonCount[];
+  flags: ModerationFlagItem[];
+  logs: ModerationLogItem[];
+}
+
+export interface ModerationQueueResult {
+  filter: ModerationQueueFilter;
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  pendingReportsCount: number;
+  resolvedReportsCount: number;
+  hasMore: boolean;
+  items: ModerationReportItem[];
 }
 
 export interface CreateReportFallbackDisplay {

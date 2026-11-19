@@ -1,5 +1,11 @@
 const AUTH_RETURN_PATH_KEY = 'praiou_auth_return_path';
-const ALLOWED_EXACT_RETURN_PATHS = new Set(['/', '/feed', '/perfil', '/relatar']);
+const ALLOWED_EXACT_RETURN_PATHS = new Set([
+  '/',
+  '/feed',
+  '/perfil',
+  '/relatar',
+  '/moderacao',
+]);
 const ALLOWED_BEACH_PATH_REGEX = /^\/praia\/[a-z0-9-]+$/;
 
 export function sanitizeInternalReturnPath(
