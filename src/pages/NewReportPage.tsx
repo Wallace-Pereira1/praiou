@@ -5,7 +5,7 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { EmptyState } from '../components/ui/EmptyState';
-import { StarRatingInput } from '../components/ui/StarRating';
+import { SunRatingInput } from '../components/ui/StarRating';
 import { useApp } from '../context/AppContext';
 import * as reportsService from '../services/reports';
 
@@ -43,7 +43,7 @@ export function NewReportPage() {
     }
 
     if (rating === null) {
-      setErrorMessage('Selecione uma nota de 1 a 5 estrelas.');
+      setErrorMessage('Selecione uma avaliação de 1 a 5 sóis.');
       return;
     }
 
@@ -146,16 +146,16 @@ export function NewReportPage() {
                 </select>
               </div>
 
-              {/* Nota de 1 a 5 estrelas */}
+              {/* Avaliação de 1 a 5 sóis */}
               <div>
                 <span className="block text-sm font-bold text-[#0F172A]">
-                  Como está a praia agora?
+                  Quantos sóis essa praia merece?
                 </span>
                 <p className="mt-0.5 text-xs text-[#475569]">
                   Considere sol, vento e mar para ajudar quem vai agora.
                 </p>
                 <div className="mt-2.5">
-                  <StarRatingInput
+                  <SunRatingInput
                     value={rating}
                     onChange={(val) => {
                       setRating(val);

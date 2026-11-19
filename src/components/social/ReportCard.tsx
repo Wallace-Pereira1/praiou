@@ -5,7 +5,7 @@ import type { BeachReport } from '../../types';
 import { formatRelativeTime, getInitials } from '../../utils/formatters';
 import { Badge } from '../ui/Badge';
 import { Card } from '../ui/Card';
-import { StarRatingDisplay } from '../ui/StarRating';
+import { SunRatingDisplay } from '../ui/StarRating';
 
 interface ReportCardProps {
   report: BeachReport;
@@ -78,7 +78,7 @@ export function ReportCard({
             </div>
           </div>
 
-          <StarRatingDisplay rating={report.rating} />
+          <SunRatingDisplay rating={report.rating} />
         </div>
 
         {/* Comentário do usuário */}
