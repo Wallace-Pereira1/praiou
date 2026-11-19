@@ -9,6 +9,11 @@ import type {
   SnapshotSourceStatus,
   WeatherConditionType,
 } from '../types';
+import {
+  calculatePraiouScore,
+  hasMinimumMetricsForScore,
+  type PraiouScoreInput,
+} from '../utils/praiouScore';
 import { getBeaches } from './beaches';
 import { fetchLiveConditionsForBeach } from './weather';
 
@@ -103,6 +108,32 @@ function normalizeCondition(raw: string | null): WeatherConditionType {
   return 'partly_cloudy';
 }
 
+function applyUpdatedPraiouScore(snapshot: BeachSnapshot): BeachSnapshot {
+  const scoreInput: PraiouScoreInput = {
+    temperatureC: snapshot.temperatureC,
+    rainProb: snapshot.rainProb,
+    rainMm: snapshot.rainMm,
+    windKmh: snapshot.windKmh,
+    cloudCover: snapshot.cloudCover,
+    uvIndex: snapshot.uvIndex,
+    waveHeightM: snapshot.waveHeightM,
+    wavePeriodS: snapshot.wavePeriodS,
+  };
+
+  if (!hasMinimumMetricsForScore(scoreInput)) {
+    return snapshot;
+  }
+
+  const scored = calculatePraiouScore(scoreInput);
+  return {
+    ...snapshot,
+    status: scored.status,
+    score: scored.score,
+    summaryReason: scored.summaryReason,
+    reasons: scored.reasons,
+  };
+}
+
 function mapSupabaseSnapshot(row: SupabaseSnapshotRow): BeachSnapshot {
   const reasons = Array.isArray(row.reasons)
     ? row.reasons.filter((item): item is string => typeof item === 'string')
@@ -112,7 +143,7 @@ function mapSupabaseSnapshot(row: SupabaseSnapshotRow): BeachSnapshot {
     ? (row.hourly_forecast as HourlyForecastPoint[])
     : [];
 
-  return {
+  return applyUpdatedPraiouScore({
     id: row.id,
     beachId: row.beach_id,
     status: normalizeStatus(row.status),
@@ -135,7 +166,7 @@ function mapSupabaseSnapshot(row: SupabaseSnapshotRow): BeachSnapshot {
     sourceStatus: normalizeSourceStatus(row.source_status),
     updatedAtLabel: formatFetchedTimeBRT(row.fetched_at),
     fetchedAt: row.fetched_at,
-  };
+  });
 }
 
 function isRowFreshEnough(fetchedAtIso: string): boolean {
@@ -149,15 +180,15 @@ function getFallbackForBeach(beach: Beach): BeachSnapshot | undefined {
   if (cached) return cached;
 
   const byId = mockByBeachId.get(beach.id);
-  if (byId) return byId;
+  if (byId) return applyUpdatedPraiouScore(byId);
 
   const bySlug = mockBySlug.get(beach.slug);
   if (!bySlug) return undefined;
 
-  return {
+  return applyUpdatedPraiouScore({
     ...bySlug,
     beachId: beach.id,
-  };
+  });
 }
 
 async function resolveBeachSnapshot(

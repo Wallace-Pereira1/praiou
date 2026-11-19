@@ -7,6 +7,7 @@ import {
   HelpCircle,
   Info,
   ShieldAlert,
+  Sun,
   Thermometer,
   Waves,
   Wind,
@@ -281,6 +282,13 @@ export function BeachCard({
                 </div>
               )}
 
+              {scoreExplanation.uvNotice && (
+                <div className="flex items-start gap-2 rounded-lg border border-sky-200 bg-sky-50/70 p-2.5 text-[11px] font-medium leading-relaxed text-[#0369A1]">
+                  <Sun className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden="true" />
+                  <span>{scoreExplanation.uvNotice}</span>
+                </div>
+              )}
+
               {/* Fatores reais usados no cálculo */}
               <ul className="space-y-2" aria-label="Fatores considerados no índice">
                 {scoreExplanation.factors.map((factor) => (
@@ -348,10 +356,10 @@ export function BeachCard({
                 <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#92400E]" aria-hidden="true" />
                 <div className="space-y-1">
                   <p className="font-semibold text-[#78350F]">
-                    Estimativa informativa — não indica balneabilidade nem segurança para banho.
+                    Estimativa informativa — não indica balneabilidade, limpeza da água nem segurança para banho.
                   </p>
                   <p>
-                    O índice não mede poluição da água, correnteza, valas, água-viva, lotação, presença de salvamento ou condições locais em tempo real. Observe as bandeiras na orla e siga sempre a orientação dos guarda-vidas.
+                    O índice não mede poluição, limpeza da água, correnteza, valas, água-viva, lotação, salvamento ou condições locais em tempo real. Observe as bandeiras na orla e siga sempre a orientação dos guarda-vidas.
                   </p>
                 </div>
               </div>
