@@ -13,6 +13,7 @@ import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/LoginPage';
 import { ModerationPage } from './pages/ModerationPage';
 import { NewReportPage } from './pages/NewReportPage';
+import { NotificationsPage } from './pages/NotificationsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { PublicProfilePage } from './pages/PublicProfilePage';
 
@@ -34,6 +35,7 @@ export default function App() {
           <Route path="/praia/:slug" element={<BeachDetailPage />} />
           <Route path="/feed" element={<FeedPage />} />
           <Route path="/relatar" element={<NewReportPage />} />
+          <Route path="/notificacoes" element={<NotificationsPage />} />
           <Route path="/entrar" element={<LoginPage />} />
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
           <Route path="/perfil" element={<ProfilePage />} />

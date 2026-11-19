@@ -1,4 +1,4 @@
-import { List, Plus, Star, User } from 'lucide-react';
+import { Bell, List, Plus, Star, User } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
@@ -6,9 +6,13 @@ import { getInitials } from '../../utils/formatters';
 
 interface AppLayoutProps {
   children: ReactNode;
+  unreadNotificationsCount?: number;
 }
 
-export function AppLayout({ children }: AppLayoutProps) {
+export function AppLayout({
+  children,
+  unreadNotificationsCount = 0,
+}: AppLayoutProps) {
   const { user, isModerator } = useApp();
   const [avatarError, setAvatarError] = useState(false);
 
@@ -130,52 +134,83 @@ export function AppLayout({ children }: AppLayoutProps) {
         aria-label="Navegação inferior"
         className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-[#E2E8F0] bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md"
       >
-        <div className="mx-auto grid h-16 max-w-md grid-cols-4 items-center px-2">
+        <div className="mx-auto grid h-16 max-w-md grid-cols-5 items-center px-1 sm:px-2">
           <NavLink
             to="/"
             end
             className={({ isActive }) =>
-              `min-h-[44px] flex flex-col items-center justify-center gap-0.5 rounded-xl transition-colors ${
+              `min-h-[44px] min-w-0 flex flex-col items-center justify-center gap-0.5 rounded-xl px-0.5 transition-colors ${
                 isActive ? 'text-[#0284C7]' : 'text-[#475569] hover:text-[#0F172A]'
               }`
             }
           >
             <List className="h-5 w-5" aria-hidden="true" />
-            <span className="text-[11px] font-semibold tracking-tight">Praias</span>
+            <span className="text-[10px] sm:text-[11px] font-semibold tracking-tight leading-none">
+              Praias
+            </span>
           </NavLink>
 
           <NavLink
             to="/feed"
             className={({ isActive }) =>
-              `min-h-[44px] flex flex-col items-center justify-center gap-0.5 rounded-xl transition-colors ${
+              `min-h-[44px] min-w-0 flex flex-col items-center justify-center gap-0.5 rounded-xl px-0.5 transition-colors ${
                 isActive ? 'text-[#0284C7]' : 'text-[#475569] hover:text-[#0F172A]'
               }`
             }
           >
             <Star className="h-5 w-5" aria-hidden="true" />
-            <span className="text-[11px] font-semibold tracking-tight">Feed</span>
+            <span className="text-[10px] sm:text-[11px] font-semibold tracking-tight leading-none">
+              Feed
+            </span>
           </NavLink>
 
           <Link
             to="/relatar"
             aria-label="Novo relato"
-            className="flex flex-col items-center justify-center"
+            className="min-h-[44px] min-w-0 flex flex-col items-center justify-center"
           >
-            <span className="flex h-11 w-14 items-center justify-center rounded-2xl bg-[#0284C7] text-white shadow-sm active:scale-95 transition-transform">
+            <span className="flex h-11 w-12 sm:w-14 items-center justify-center rounded-2xl bg-[#0284C7] text-white shadow-sm active:scale-95 transition-transform">
               <Plus className="h-5 w-5 stroke-[2.5]" aria-hidden="true" />
             </span>
           </Link>
 
           <NavLink
+            to="/notificacoes"
+            aria-label="Notificações"
+            className={({ isActive }) =>
+              `min-h-[44px] min-w-0 flex flex-col items-center justify-center gap-0.5 rounded-xl px-0.5 transition-colors ${
+                isActive ? 'text-[#0284C7]' : 'text-[#475569] hover:text-[#0F172A]'
+              }`
+            }
+          >
+            <span className="relative inline-flex items-center justify-center">
+              <Bell className="h-5 w-5" aria-hidden="true" />
+              {unreadNotificationsCount > 0 && (
+                <span
+                  aria-label={`${unreadNotificationsCount} notificações não lidas`}
+                  className="absolute -right-2 -top-1.5 inline-flex min-w-[16px] h-4 items-center justify-center rounded-full bg-[#EF4444] px-1 text-[10px] font-bold leading-none text-white tabular-nums"
+                >
+                  {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+                </span>
+              )}
+            </span>
+            <span className="text-[10px] sm:text-[11px] font-semibold tracking-tight leading-none">
+              Notificações
+            </span>
+          </NavLink>
+
+          <NavLink
             to="/perfil"
             className={({ isActive }) =>
-              `min-h-[44px] flex flex-col items-center justify-center gap-0.5 rounded-xl transition-colors ${
+              `min-h-[44px] min-w-0 flex flex-col items-center justify-center gap-0.5 rounded-xl px-0.5 transition-colors ${
                 isActive ? 'text-[#0284C7]' : 'text-[#475569] hover:text-[#0F172A]'
               }`
             }
           >
             <User className="h-5 w-5" aria-hidden="true" />
-            <span className="text-[11px] font-semibold tracking-tight">Eu</span>
+            <span className="text-[10px] sm:text-[11px] font-semibold tracking-tight leading-none">
+              Eu
+            </span>
           </NavLink>
         </div>
       </nav>
