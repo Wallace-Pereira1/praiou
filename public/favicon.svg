@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Haste do guarda-sol -->
+  <line
+    x1="32"
+    y1="32"
+    x2="32"
+    y2="54"
+    stroke="#0369A1"
+    stroke-width="5"
+    stroke-linecap="round"
+  />
+  <!-- Pequena curva de areia na base -->
+  <path
+    d="M16 56 Q32 50 48 56"
+    stroke="#FBBF24"
+    stroke-width="4.5"
+    stroke-linecap="round"
+  />
+  <!-- Gomo esquerdo (azul oceano) -->
+  <path
+    d="M32 12 C18 12 8 22 6 35 Q14 31 22 35 Q24 22 32 12 Z"
+    fill="#0284C7"
+  />
+  <!-- Gomo direito (azul oceano) -->
+  <path
+    d="M32 12 C46 12 56 22 58 35 Q50 31 42 35 Q40 22 32 12 Z"
+    fill="#0284C7"
+  />
+  <!-- Gomo central (amarelo destaque) -->
+  <path
+    d="M32 12 Q24 22 22 35 Q32 31 42 35 Q40 22 32 12 Z"
+    fill="#FBBF24"
+  />
+  <!-- Ponteira superior -->
+  <circle cx="32" cy="10" r="3" fill="#0369A1" />
+</svg>
