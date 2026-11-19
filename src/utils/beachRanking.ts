@@ -93,6 +93,67 @@ export function getSnapshotAvailability(
   return 'current';
 }
 
+function toFiniteOrNull(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+export function formatBeachScore(score: number | null | undefined): string {
+  const valid = toFiniteOrNull(score);
+  if (valid === null || valid < 0 || valid > 100) {
+    return '—';
+  }
+  return `${valid.toFixed(1)}/100`;
+}
+
+function compareNullableMetricAsc(
+  aValue: number | null | undefined,
+  bValue: number | null | undefined
+): number {
+  const a = toFiniteOrNull(aValue);
+  const b = toFiniteOrNull(bValue);
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return a - b;
+}
+
+export function compareRankingMetrics(
+  a: RankedBeachEntry,
+  b: RankedBeachEntry
+): number {
+  if (a.validScore !== null && b.validScore !== null) {
+    if (a.validScore !== b.validScore) {
+      return b.validScore - a.validScore;
+    }
+  } else if (a.validScore !== null) {
+    return -1;
+  } else if (b.validScore !== null) {
+    return 1;
+  }
+
+  // Desempate explicável pelas condições exibidas no card:
+  // 1) menor chance de chuva, 2) menor vento, 3) menor altura de ondas
+  const rainDiff = compareNullableMetricAsc(
+    a.snapshot?.rainProb,
+    b.snapshot?.rainProb
+  );
+  if (rainDiff !== 0) return rainDiff;
+
+  const windDiff = compareNullableMetricAsc(
+    a.snapshot?.windKmh,
+    b.snapshot?.windKmh
+  );
+  if (windDiff !== 0) return windDiff;
+
+  const waveDiff = compareNullableMetricAsc(
+    a.snapshot?.waveHeightM,
+    b.snapshot?.waveHeightM
+  );
+  if (waveDiff !== 0) return waveDiff;
+
+  return 0;
+}
+
 export function compareBeachesDeterministic(a: Beach, b: Beach): number {
   if (a.sortOrder !== b.sortOrder) {
     return a.sortOrder - b.sortOrder;
@@ -172,8 +233,16 @@ export function rankAndFilterBeaches(params: {
       return groupDiff;
     }
 
-    if (a.validScore !== null && b.validScore !== null && b.validScore !== a.validScore) {
-      return b.validScore - a.validScore;
+    const metricDiff = compareRankingMetrics(a, b);
+    if (metricDiff !== 0) {
+      return metricDiff;
+    }
+
+    const byName = a.beach.name.localeCompare(b.beach.name, 'pt-BR', {
+      sensitivity: 'base',
+    });
+    if (byName !== 0) {
+      return byName;
     }
 
     return compareBeachesDeterministic(a.beach, b.beach);
@@ -181,7 +250,6 @@ export function rankAndFilterBeaches(params: {
 
   if (sortMode === 'melhor-agora') {
     let currentSeen = 0;
-    let lastCurrentScore: number | null = null;
     let lastCurrentRank = 0;
     let lastCurrentEntry: RankedBeachEntry | null = null;
 
@@ -191,16 +259,20 @@ export function rankAndFilterBeaches(params: {
       }
 
       currentSeen += 1;
-      if (lastCurrentScore !== null && entry.validScore === lastCurrentScore) {
-        entry.rank = lastCurrentRank;
-        entry.isTied = true;
-        if (lastCurrentEntry) {
+      if (
+        lastCurrentEntry !== null &&
+        compareRankingMetrics(lastCurrentEntry, entry) === 0
+      ) {
+        if (lastCurrentRank <= 3) {
+          entry.rank = lastCurrentRank;
+          entry.isTied = true;
           lastCurrentEntry.isTied = true;
         }
       } else {
         lastCurrentRank = currentSeen;
-        entry.rank = lastCurrentRank;
-        lastCurrentScore = entry.validScore;
+        if (lastCurrentRank <= 3) {
+          entry.rank = lastCurrentRank;
+        }
       }
       lastCurrentEntry = entry;
     }

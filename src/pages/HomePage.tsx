@@ -260,7 +260,9 @@ export function HomePage() {
                 {sectionTitle}
               </h2>
               <p className="text-xs leading-relaxed text-[#475569]">
-                Ranking por condições estimadas de tempo e mar. Não indica balneabilidade nem garante segurança para banho.
+                {sortMode === 'melhor-agora'
+                  ? 'As três primeiras praias recebem destaque (1º a 3º) pelas condições estimadas de tempo e mar. O índice é estimativa e não indica balneabilidade nem segurança para banho.'
+                  : 'Condições estimadas de tempo e mar para cada praia. O índice é estimativa e não indica balneabilidade nem segurança para banho.'}
               </p>
             </div>
 
@@ -300,7 +302,7 @@ export function HomePage() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            <div className="grid grid-cols-1 md:grid-cols-2 items-start gap-3.5">
               {rankingSummary.entries.map((entry) => (
                 <BeachCard
                   key={entry.beach.id}
