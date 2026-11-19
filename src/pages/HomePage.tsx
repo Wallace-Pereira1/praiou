@@ -135,10 +135,10 @@ export function HomePage() {
           </div>
         </section>
 
-        {/* Aviso de segurança discreto e dispensável */}
+        {/* Aviso de segurança discreto e dispensável 
         {!safetyBannerDismissed && (
           <SafetyNotice dismissible onDismiss={dismissSafetyBanner} variant="compact" />
-        )}
+        )}*/}
 
         {/* Filtros por região, busca e seletor de ordenação */}
         <section

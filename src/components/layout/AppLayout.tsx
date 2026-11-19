@@ -52,7 +52,7 @@ export function AppLayout({
             <NavLink
               to="/feed"
               className={({ isActive }) =>
-                `py-1.5 whitespace-nowrap shrink-0 transition-colors border-b-2 ${
+                `py-1.5 whitespace-nowrap shrink-0 transition-colors border-b-2 rounded-sm focus-visible:outline-2 focus-visible:outline-[#0284C7] focus-visible:outline-offset-4 ${
                   isActive
                     ? 'border-[#0284C7] text-[#0F172A] font-semibold'
                     : 'border-transparent hover:text-[#0F172A]'
@@ -62,9 +62,30 @@ export function AppLayout({
               Feed
             </NavLink>
             <NavLink
+              to="/notificacoes"
+              aria-label="Notificações"
+              className={({ isActive }) =>
+                `inline-flex items-center gap-1.5 py-1.5 whitespace-nowrap shrink-0 transition-colors border-b-2 rounded-sm focus-visible:outline-2 focus-visible:outline-[#0284C7] focus-visible:outline-offset-4 ${
+                  isActive
+                    ? 'border-[#0284C7] text-[#0F172A] font-semibold'
+                    : 'border-transparent hover:text-[#0F172A]'
+                }`
+              }
+            >
+              <span>Notificações</span>
+              {unreadNotificationsCount > 0 && (
+                <span
+                  aria-label={`${unreadNotificationsCount} notificações não lidas`}
+                  className="inline-flex min-w-[18px] h-[18px] items-center justify-center rounded-full bg-[#EF4444] px-1 text-[10px] font-bold leading-none text-white tabular-nums"
+                >
+                  {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+                </span>
+              )}
+            </NavLink>
+            <NavLink
               to="/perfil"
               className={({ isActive }) =>
-                `py-1.5 whitespace-nowrap shrink-0 transition-colors border-b-2 ${
+                `py-1.5 whitespace-nowrap shrink-0 transition-colors border-b-2 rounded-sm focus-visible:outline-2 focus-visible:outline-[#0284C7] focus-visible:outline-offset-4 ${
                   isActive
                     ? 'border-[#0284C7] text-[#0F172A] font-semibold'
                     : 'border-transparent hover:text-[#0F172A]'
@@ -77,7 +98,7 @@ export function AppLayout({
               <NavLink
                 to="/moderacao"
                 className={({ isActive }) =>
-                  `py-1.5 whitespace-nowrap shrink-0 transition-colors border-b-2 ${
+                  `py-1.5 whitespace-nowrap shrink-0 transition-colors border-b-2 rounded-sm focus-visible:outline-2 focus-visible:outline-[#0284C7] focus-visible:outline-offset-4 ${
                     isActive
                       ? 'border-[#0284C7] text-[#0F172A] font-semibold'
                       : 'border-transparent hover:text-[#0F172A]'
