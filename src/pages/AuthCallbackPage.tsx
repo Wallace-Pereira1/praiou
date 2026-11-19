@@ -54,6 +54,7 @@ export function AuthCallbackPage() {
       try {
         await exchangeOAuthCode(code);
         if (!active) return;
+        window.history.replaceState(window.history.state, '', window.location.pathname);
         navigate('/perfil', { replace: true });
       } catch {
         if (!active) return;

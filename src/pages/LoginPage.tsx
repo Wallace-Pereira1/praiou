@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, LogIn } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Loader2, LogIn } from 'lucide-react';
 import { useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
@@ -6,12 +6,29 @@ import { Card } from '../components/ui/Card';
 import { useApp } from '../context/AppContext';
 
 export function LoginPage() {
-  const { user, isInitialLoading, signInWithGoogle } = useApp();
+  const { user, authReady, signInWithGoogle } = useApp();
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  if (!isInitialLoading && user) {
+  if (!authReady) {
+    return (
+      <div className="min-h-screen flex flex-col bg-[#F8FAFC] text-[#0F172A] px-4 py-6">
+        <div className="mx-auto my-auto w-full max-w-md py-6">
+          <Card padding="lg" className="p-8 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-sky-100 text-[#0284C7]">
+              <Loader2 className="h-6 w-6 animate-spin" aria-hidden="true" />
+            </div>
+            <p className="mt-3 text-sm font-medium text-[#475569]">
+              Verificando sua sessão...
+            </p>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (user) {
     return <Navigate to="/perfil" replace />;
   }
 

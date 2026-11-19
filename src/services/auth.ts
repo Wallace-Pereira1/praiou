@@ -63,8 +63,11 @@ export function onAuthStateChange(
 
   const {
     data: { subscription },
-  } = supabase.auth.onAuthStateChange((_event, session) => {
+  } = supabase.auth.onAuthStateChange((event, session) => {
     clearLegacyDemoSession();
+    if (event === 'SIGNED_OUT') {
+      exchangedUserByCode.clear();
+    }
     callback(mapSupabaseUserToAppUser(session?.user ?? null));
   });
 
@@ -120,8 +123,8 @@ export async function exchangeCodeForSession(code: string): Promise<AppUser> {
       throw error;
     }
 
-    const mapped = mapSupabaseUserToAppUser(data.session?.user ?? data.user ?? null);
-    if (!mapped) {
+    const mapped = mapSupabaseUserToAppUser(data.session?.user ?? null);
+    if (!data.session || !mapped) {
       throw new Error('Sessão não retornada após validação do código.');
     }
 
@@ -137,6 +140,7 @@ export async function exchangeCodeForSession(code: string): Promise<AppUser> {
 
 export async function signOut(): Promise<void> {
   clearLegacyDemoSession();
+  exchangedUserByCode.clear();
   if (!supabase) return;
 
   const { error } = await supabase.auth.signOut();

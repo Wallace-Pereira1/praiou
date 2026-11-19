@@ -1,4 +1,4 @@
-import { LogIn, LogOut, Plus, User as UserIcon } from 'lucide-react';
+import { Loader2, LogIn, LogOut, Plus, User as UserIcon } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AppLayout } from '../components/layout/AppLayout';
@@ -11,7 +11,7 @@ import { useApp } from '../context/AppContext';
 import { getInitials } from '../utils/formatters';
 
 export function ProfilePage() {
-  const { user, reports, deleteReport, logout } = useApp();
+  const { user, authReady, reports, deleteReport, logout } = useApp();
   const navigate = useNavigate();
 
   const [avatarError, setAvatarError] = useState(false);
@@ -52,7 +52,18 @@ export function ProfilePage() {
 
   return (
     <AppLayout>
-      {!user ? (
+      {!authReady ? (
+        <div className="mx-auto max-w-md py-8">
+          <Card padding="lg" className="p-8 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-sky-100 text-[#0284C7]">
+              <Loader2 className="h-6 w-6 animate-spin" aria-hidden="true" />
+            </div>
+            <p className="mt-3 text-sm font-medium text-[#475569]">
+              Verificando sua sessão...
+            </p>
+          </Card>
+        </div>
+      ) : !user ? (
         <div className="mx-auto max-w-md py-4">
           <EmptyState
             icon={<UserIcon className="h-6 w-6" aria-hidden="true" />}

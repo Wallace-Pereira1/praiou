@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -26,6 +27,7 @@ interface AppContextValue {
   reports: BeachReport[];
   flaggedReportIds: string[];
   user: AppUser | null;
+  authReady: boolean;
   isInitialLoading: boolean;
   loadError: string | null;
   safetyBannerDismissed: boolean;
@@ -48,8 +50,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [reports, setReports] = useState<BeachReport[]>([]);
   const [flaggedReportIds, setFlaggedReportIds] = useState<string[]>([]);
   const [user, setUser] = useState<AppUser | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Evita que uma leitura inicial lenta sobrescreva eventos mais recentes de autenticação
+  const authEpochRef = useRef(0);
 
   const [safetyBannerDismissed, setSafetyBannerDismissed] = useState<boolean>(() => {
     try {
@@ -59,16 +65,48 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   });
 
+  useEffect(() => {
+    let mounted = true;
+
+    const unsubscribe = authService.onAuthStateChange((nextUser) => {
+      if (!mounted) return;
+      authEpochRef.current += 1;
+      setUser(nextUser);
+      setAuthReady(true);
+    });
+
+    const capturedEpoch = authEpochRef.current;
+    void authService
+      .getCurrentUser()
+      .then((initialUser) => {
+        if (!mounted) return;
+        if (authEpochRef.current === capturedEpoch) {
+          setUser(initialUser);
+          setAuthReady(true);
+        }
+      })
+      .catch(() => {
+        if (!mounted) return;
+        if (authEpochRef.current === capturedEpoch) {
+          setUser(null);
+          setAuthReady(true);
+        }
+      });
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, []);
+
   const loadAll = useCallback(async (forceRefresh = false) => {
     setLoadError(null);
     try {
-      const [loadedBeaches, loadedSnapshots, loadedReports, currentUser] =
-        await Promise.all([
-          beachesService.getBeaches(),
-          snapshotsService.getLatestSnapshots(forceRefresh),
-          reportsService.getAllReports(),
-          authService.getCurrentUser(),
-        ]);
+      const [loadedBeaches, loadedSnapshots, loadedReports] = await Promise.all([
+        beachesService.getBeaches(),
+        snapshotsService.getLatestSnapshots(forceRefresh),
+        reportsService.getAllReports(),
+      ]);
 
       const beachBySlug = new Map(loadedBeaches.map((b) => [b.slug, b]));
       const alignedReports = loadedReports.map((report) => {
@@ -79,7 +117,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setBeaches(loadedBeaches);
       setSnapshots(loadedSnapshots);
       setReports(alignedReports);
-      setUser(currentUser);
     } catch {
       setLoadError('Não foi possível carregar os dados das praias agora.');
     } finally {
@@ -90,12 +127,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void loadAll(false);
   }, [loadAll]);
-
-  useEffect(() => {
-    return authService.onAuthStateChange((nextUser) => {
-      setUser(nextUser);
-    });
-  }, []);
 
   const refreshData = useCallback(
     async (forceRefresh = true) => {
@@ -142,13 +173,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const exchangeOAuthCode = useCallback(async (code: string): Promise<AppUser> => {
     const authenticatedUser = await authService.exchangeCodeForSession(code);
+    authEpochRef.current += 1;
     setUser(authenticatedUser);
+    setAuthReady(true);
     return authenticatedUser;
   }, []);
 
   const logout = useCallback(async (): Promise<void> => {
     await authService.signOut();
+    authEpochRef.current += 1;
     setUser(null);
+    setAuthReady(true);
   }, []);
 
   return (
@@ -159,6 +194,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         reports,
         flaggedReportIds,
         user,
+        authReady,
         isInitialLoading,
         loadError,
         safetyBannerDismissed,
