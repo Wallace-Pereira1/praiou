@@ -4,6 +4,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { AppLayout } from '../components/layout/AppLayout';
 import { ReportCard } from '../components/social/ReportCard';
 import { ReportFlagModal } from '../components/social/ReportFlagModal';
+import { ReportRepliesModal } from '../components/social/ReportRepliesModal';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
@@ -11,6 +12,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorState } from '../components/ui/ErrorState';
 import { Skeleton } from '../components/ui/Skeleton';
 import { useApp } from '../context/AppContext';
+import { useReportConversation } from '../hooks/useReportConversation';
 import { useReportFlagActions } from '../hooks/useReportFlagActions';
 import { useReportHelpfulActions } from '../hooks/useReportHelpfulActions';
 import * as reportsService from '../services/reports';
@@ -165,6 +167,12 @@ export function FeedPage() {
     userId: user?.id ?? null,
     setItems,
     returnTo: `${location.pathname}${location.search}`,
+  });
+
+  const conversation = useReportConversation({
+    authReady,
+    items,
+    setItems,
   });
 
   const handleLoadMore = () => {
@@ -384,6 +392,7 @@ export function FeedPage() {
                   helpfulError={helpfulActions.helpfulErrorById[report.id] ?? null}
                   onToggleHelpful={helpfulActions.handleToggleHelpful}
                   onDismissHelpfulError={helpfulActions.dismissHelpfulError}
+                  onOpenReplies={conversation.openConversation}
                   onFlagRequest={
                     user?.id !== report.userId
                       ? flagActions.handleOpenFlagModal
@@ -418,6 +427,18 @@ export function FeedPage() {
             )}
           </div>
         )}
+
+        <ReportRepliesModal
+          key={conversation.activeReport?.id ?? 'none'}
+          report={conversation.activeReport}
+          returnTo={
+            conversation.activeReport
+              ? conversation.getConversationReturnTo(conversation.activeReport.id)
+              : '/feed'
+          }
+          onClose={conversation.closeConversation}
+          onReplyCountChange={conversation.handleReplyCountChange}
+        />
 
         <ReportFlagModal
           report={flagActions.flagTargetReport}

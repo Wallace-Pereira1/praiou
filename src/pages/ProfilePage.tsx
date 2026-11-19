@@ -25,6 +25,7 @@ import { AvatarCropModal } from '../components/social/AvatarCropModal';
 import { BannerCropModal } from '../components/social/BannerCropModal';
 import { EditProfileModal } from '../components/social/EditProfileModal';
 import { ReportCard } from '../components/social/ReportCard';
+import { ReportRepliesModal } from '../components/social/ReportRepliesModal';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
@@ -32,6 +33,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorState } from '../components/ui/ErrorState';
 import { Skeleton } from '../components/ui/Skeleton';
 import { useApp } from '../context/AppContext';
+import { useReportConversation } from '../hooks/useReportConversation';
 import { useReportHelpfulActions } from '../hooks/useReportHelpfulActions';
 import { validateAvatarFile, validateBannerFile } from '../services/profiles';
 import * as reportsService from '../services/reports';
@@ -207,6 +209,13 @@ export function ProfilePage() {
     items: userReports,
     setItems: setUserReports,
     returnTo: '/perfil',
+  });
+
+  const conversation = useReportConversation({
+    authReady,
+    items: userReports,
+    setItems: setUserReports,
+    baseReturnTo: '/perfil',
   });
 
   const handleSaveName = async (displayName: string) => {
@@ -755,6 +764,11 @@ export function ProfilePage() {
                       helpfulError={helpfulActions.helpfulErrorById[report.id] ?? null}
                       onToggleHelpful={helpfulActions.handleToggleHelpful}
                       onDismissHelpfulError={helpfulActions.dismissHelpfulError}
+                      onOpenReplies={
+                        report.moderationStatus !== 'hidden'
+                          ? conversation.openConversation
+                          : undefined
+                      }
                       onDeleteRequest={
                         user.id === report.userId
                           ? (id) => setReportPendingDelete(id)
@@ -837,6 +851,18 @@ export function ProfilePage() {
               }
             }}
             onSave={handleSaveCroppedBanner}
+          />
+
+          <ReportRepliesModal
+            key={conversation.activeReport?.id ?? 'none'}
+            report={conversation.activeReport}
+            returnTo={
+              conversation.activeReport
+                ? conversation.getConversationReturnTo(conversation.activeReport.id)
+                : '/perfil'
+            }
+            onClose={conversation.closeConversation}
+            onReplyCountChange={conversation.handleReplyCountChange}
           />
 
           <ConfirmModal

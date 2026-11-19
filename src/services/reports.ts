@@ -13,6 +13,7 @@ import {
 } from '../utils/reportImage';
 import { getMyFlaggedReportIds } from './moderation';
 import { getPublicProfileStats, resolveProfileAvatarUrl } from './profiles';
+import { getReportReplySummaries } from './replies';
 
 export const DEFAULT_REPORTS_PAGE_SIZE = 20;
 const MAX_HELPFUL_SUMMARY_BATCH = 50;
@@ -153,13 +154,16 @@ function mapSupabaseReport(
   fallbackDisplay?: CreateReportFallbackDisplay,
   helpfulSummary?: HelpfulReactionSummary,
   helpfulLoadError = false,
-  viewerHasFlagged = false
+  viewerHasFlagged = false,
+  replyCount: number | null = 0,
+  replyLoadError = false
 ): BeachReport {
   const profile = unwrapRelation(row.profiles);
   const beach = unwrapRelation(row.beaches);
   const beachName = beach?.name ?? fallbackDisplay?.beachName ?? 'Praia do Rio';
   const photoPath = row.photo_path?.trim() || undefined;
   const photoUrl = getReportPhotoPublicUrl(photoPath);
+  const isHidden = row.moderation_status === 'hidden';
 
   return {
     id: row.id,
@@ -184,13 +188,15 @@ function mapSupabaseReport(
     photoUrl,
     photoAlt: photoUrl ? `Foto enviada no relato sobre ${beachName}` : undefined,
     createdAt: row.created_at,
-    moderationStatus: row.moderation_status === 'hidden' ? 'hidden' : 'visible',
+    moderationStatus: isHidden ? 'hidden' : 'visible',
     moderatedAt: row.moderated_at ?? undefined,
     helpfulCount: helpfulLoadError ? null : (helpfulSummary?.helpfulCount ?? 0),
     viewerHasReacted: helpfulLoadError
       ? false
       : (helpfulSummary?.viewerHasReacted ?? false),
     helpfulLoadError,
+    replyCount: isHidden ? 0 : replyLoadError ? null : (replyCount ?? 0),
+    replyLoadError: isHidden ? false : replyLoadError,
     viewerHasFlagged,
   };
 }
@@ -424,11 +430,14 @@ async function fetchPaginatedReports(
   let helpfulMap = new Map<string, HelpfulReactionSummary>();
   let helpfulLoadError = false;
   let flaggedSet = new Set<string>();
+  let replyMap = new Map<string, number>();
+  let replyLoadError = false;
 
   if (reportIds.length > 0) {
-    const [helpfulOutcome, flaggedOutcome] = await Promise.allSettled([
+    const [helpfulOutcome, flaggedOutcome, replyOutcome] = await Promise.allSettled([
       getReportHelpfulSummaries(reportIds),
       getMyFlaggedReportIds(reportIds),
+      getReportReplySummaries(reportIds),
     ]);
 
     if (helpfulOutcome.status === 'fulfilled') {
@@ -440,6 +449,12 @@ async function fetchPaginatedReports(
     if (flaggedOutcome.status === 'fulfilled') {
       flaggedSet = flaggedOutcome.value;
     }
+
+    if (replyOutcome.status === 'fulfilled') {
+      replyMap = replyOutcome.value;
+    } else {
+      replyLoadError = true;
+    }
   }
 
   const items = rows.map((row) =>
@@ -448,7 +463,9 @@ async function fetchPaginatedReports(
       undefined,
       helpfulMap.get(row.id),
       helpfulLoadError,
-      flaggedSet.has(row.id)
+      flaggedSet.has(row.id),
+      replyLoadError ? null : (replyMap.get(row.id) ?? 0),
+      replyLoadError
     )
   );
   const totalCount = typeof count === 'number' ? count : items.length;
@@ -492,6 +509,61 @@ export async function getPublicReportsByUser(
 export async function getUserEvaluatedBeachesCount(userId: string): Promise<number> {
   const stats = await getPublicProfileStats(userId);
   return stats.evaluatedBeachesCount;
+}
+
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export async function getVisibleReportById(
+  reportId: string
+): Promise<BeachReport | null> {
+  const trimmedId = reportId.trim();
+  if (!supabase || !UUID_REGEX.test(trimmedId)) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from('beach_reports')
+    .select(REPORT_SELECT)
+    .eq('id', trimmedId)
+    .eq('moderation_status', 'visible')
+    .maybeSingle();
+
+  if (error || !data) {
+    return null;
+  }
+
+  const row = data as SupabaseBeachReportRow;
+  const [helpfulOutcome, flaggedOutcome, replyOutcome] = await Promise.allSettled([
+    getReportHelpfulSummaries([row.id]),
+    getMyFlaggedReportIds([row.id]),
+    getReportReplySummaries([row.id]),
+  ]);
+
+  const helpfulSummary =
+    helpfulOutcome.status === 'fulfilled'
+      ? helpfulOutcome.value.get(row.id)
+      : undefined;
+  const helpfulLoadError = helpfulOutcome.status !== 'fulfilled';
+  const viewerHasFlagged =
+    flaggedOutcome.status === 'fulfilled'
+      ? flaggedOutcome.value.has(row.id)
+      : false;
+  const replyCount =
+    replyOutcome.status === 'fulfilled'
+      ? (replyOutcome.value.get(row.id) ?? 0)
+      : null;
+  const replyLoadError = replyOutcome.status !== 'fulfilled';
+
+  return mapSupabaseReport(
+    row,
+    undefined,
+    helpfulSummary,
+    helpfulLoadError,
+    viewerHasFlagged,
+    replyCount,
+    replyLoadError
+  );
 }
 
 async function tryRemoveReportPhoto(photoPath?: string | null): Promise<boolean> {

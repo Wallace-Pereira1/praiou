@@ -20,6 +20,7 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'reac
 import { SafetyNotice } from '../components/layout/SafetyNotice';
 import { ReportCard } from '../components/social/ReportCard';
 import { ReportFlagModal } from '../components/social/ReportFlagModal';
+import { ReportRepliesModal } from '../components/social/ReportRepliesModal';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
@@ -29,6 +30,7 @@ import { Skeleton } from '../components/ui/Skeleton';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { WeatherIcon } from '../components/ui/WeatherIcon';
 import { useApp } from '../context/AppContext';
+import { useReportConversation } from '../hooks/useReportConversation';
 import { useReportFlagActions } from '../hooks/useReportFlagActions';
 import { useReportHelpfulActions } from '../hooks/useReportHelpfulActions';
 import * as reportsService from '../services/reports';
@@ -169,6 +171,12 @@ export function BeachDetailPage() {
     userId: user?.id ?? null,
     setItems: setBeachReports,
     returnTo: `${location.pathname}${location.search}`,
+  });
+
+  const conversation = useReportConversation({
+    authReady,
+    items: beachReports,
+    setItems: setBeachReports,
   });
 
   const handleRetry = async () => {
@@ -663,6 +671,7 @@ export function BeachDetailPage() {
                       helpfulError={helpfulActions.helpfulErrorById[report.id] ?? null}
                       onToggleHelpful={helpfulActions.handleToggleHelpful}
                       onDismissHelpfulError={helpfulActions.dismissHelpfulError}
+                      onOpenReplies={conversation.openConversation}
                       onFlagRequest={
                         user?.id !== report.userId
                           ? flagActions.handleOpenFlagModal
@@ -712,6 +721,18 @@ export function BeachDetailPage() {
           </>
         )}
       </main>
+
+      <ReportRepliesModal
+        key={conversation.activeReport?.id ?? 'none'}
+        report={conversation.activeReport}
+        returnTo={
+          conversation.activeReport
+            ? conversation.getConversationReturnTo(conversation.activeReport.id)
+            : `${location.pathname}${location.search}`
+        }
+        onClose={conversation.closeConversation}
+        onReplyCountChange={conversation.handleReplyCountChange}
+      />
 
       <ReportFlagModal
         report={flagActions.flagTargetReport}

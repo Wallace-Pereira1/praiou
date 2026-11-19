@@ -7,6 +7,7 @@ import {
   Loader2,
   MapPin,
   Maximize2,
+  MessageCircle,
   MoreHorizontal,
   ThumbsUp,
   Trash2,
@@ -29,6 +30,7 @@ interface ReportCardProps {
   helpfulError?: string | null;
   onToggleHelpful?: (report: BeachReport) => void;
   onDismissHelpfulError?: (reportId: string) => void;
+  onOpenReplies?: (report: BeachReport) => void;
   onFlagRequest?: (report: BeachReport) => void;
   onDeleteRequest?: (reportId: string) => void;
 }
@@ -42,6 +44,7 @@ export function ReportCard({
   helpfulError = null,
   onToggleHelpful,
   onDismissHelpfulError,
+  onOpenReplies,
   onFlagRequest,
   onDeleteRequest,
 }: ReportCardProps) {
@@ -115,6 +118,15 @@ export function ReportCard({
     : isReacted
       ? `Remover marcação "Foi útil" do relato de ${report.userName}. ${helpfulCountAccessible}.`
       : `Marcar relato de ${report.userName} como "Foi útil". ${helpfulCountAccessible}.`;
+
+  const hasKnownReplyCount =
+    typeof report.replyCount === 'number' && !report.replyLoadError;
+  const replyCountLabel = hasKnownReplyCount ? String(report.replyCount) : '—';
+  const replyCountAccessible = hasKnownReplyCount
+    ? report.replyCount === 1
+      ? '1 resposta'
+      : `${report.replyCount} respostas`
+    : 'Contagem de respostas indisponível no momento';
 
   const avatarVisual =
     report.userAvatarUrl && !avatarError ? (
@@ -268,59 +280,79 @@ export function ReportCard({
           </div>
         )}
 
-        {/* Rodapé do cartão: reação "Foi útil" (ou total no próprio relato) + Excluir (somente autor) */}
+        {/* Rodapé do cartão: reação "Foi útil", botão "Respostas" e ações */}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2">
-          {isOwnReport ? (
-            <div
-              aria-label={`Seu relato: ${helpfulCountAccessible}.`}
-              className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl border border-[#E2E8F0] bg-slate-50 px-3 text-xs font-medium text-[#475569]"
-            >
-              <ThumbsUp className="h-3.5 w-3.5 text-[#64748B]" aria-hidden="true" />
-              <span>Foi útil</span>
-              <span
-                className="rounded-md bg-white px-1.5 py-0.5 text-[11px] font-bold text-[#0F172A] tabular-nums border border-slate-200/80"
-                aria-hidden="true"
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+            {isOwnReport ? (
+              <div
+                aria-label={`Seu relato: ${helpfulCountAccessible}.`}
+                className="inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border border-[#E2E8F0] bg-slate-50 px-3 text-xs font-medium text-[#475569]"
               >
-                {helpfulCountLabel}
-              </span>
-            </div>
-          ) : (
-            <button
-              type="button"
-              disabled={isHelpfulPending || !onToggleHelpful}
-              aria-pressed={isReacted}
-              aria-label={helpfulAriaLabel}
-              onClick={() => onToggleHelpful?.(report)}
-              className={`min-h-[44px] inline-flex items-center gap-1.5 rounded-xl px-3.5 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-[#0284C7] disabled:opacity-65 ${
-                isReacted
-                  ? 'border-2 border-[#0284C7] bg-sky-50 font-bold text-[#0284C7]'
-                  : 'border border-[#E2E8F0] bg-white font-semibold text-[#475569] hover:border-[#0284C7]/50 hover:text-[#0F172A]'
-              }`}
-            >
-              {isHelpfulPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-[#0284C7]" aria-hidden="true" />
-              ) : (
-                <ThumbsUp
-                  className={`h-3.5 w-3.5 ${isReacted ? 'fill-current' : ''}`}
+                <ThumbsUp className="h-3.5 w-3.5 text-[#64748B]" aria-hidden="true" />
+                <span>Foi útil</span>
+                <span
+                  className="rounded-md bg-white px-1.5 py-0.5 text-[11px] font-bold text-[#0F172A] tabular-nums border border-slate-200/80"
                   aria-hidden="true"
-                />
-              )}
-              <span>Foi útil</span>
-              {isReacted && !isHelpfulPending && (
-                <Check className="h-3 w-3 stroke-[2.75]" aria-hidden="true" />
-              )}
-              <span
-                className={`ml-0.5 rounded-md px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${
+                >
+                  {helpfulCountLabel}
+                </span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                disabled={isHelpfulPending || !onToggleHelpful}
+                aria-pressed={isReacted}
+                aria-label={helpfulAriaLabel}
+                onClick={() => onToggleHelpful?.(report)}
+                className={`min-h-[44px] inline-flex items-center gap-1.5 rounded-xl px-3 sm:px-3.5 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-[#0284C7] disabled:opacity-65 ${
                   isReacted
-                    ? 'bg-[#0284C7] text-white'
-                    : 'bg-slate-100 text-[#0F172A]'
+                    ? 'border-2 border-[#0284C7] bg-sky-50 font-bold text-[#0284C7]'
+                    : 'border border-[#E2E8F0] bg-white font-semibold text-[#475569] hover:border-[#0284C7]/50 hover:text-[#0F172A]'
                 }`}
-                aria-hidden="true"
               >
-                {helpfulCountLabel}
-              </span>
-            </button>
-          )}
+                {isHelpfulPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-[#0284C7]" aria-hidden="true" />
+                ) : (
+                  <ThumbsUp
+                    className={`h-3.5 w-3.5 ${isReacted ? 'fill-current' : ''}`}
+                    aria-hidden="true"
+                  />
+                )}
+                <span>Foi útil</span>
+                {isReacted && !isHelpfulPending && (
+                  <Check className="h-3 w-3 stroke-[2.75]" aria-hidden="true" />
+                )}
+                <span
+                  className={`ml-0.5 rounded-md px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${
+                    isReacted
+                      ? 'bg-[#0284C7] text-white'
+                      : 'bg-slate-100 text-[#0F172A]'
+                  }`}
+                  aria-hidden="true"
+                >
+                  {helpfulCountLabel}
+                </span>
+              </button>
+            )}
+
+            {!isHiddenByModeration && onOpenReplies && (
+              <button
+                type="button"
+                onClick={() => onOpenReplies(report)}
+                aria-label={`Abrir respostas do relato de ${report.userName}. ${replyCountAccessible}.`}
+                className="min-h-[44px] inline-flex items-center gap-1.5 rounded-xl border border-[#E2E8F0] bg-white px-3 sm:px-3.5 text-xs font-semibold text-[#475569] hover:border-[#0284C7]/50 hover:text-[#0F172A] focus-visible:outline-2 focus-visible:outline-[#0284C7] transition-colors"
+              >
+                <MessageCircle className="h-3.5 w-3.5 text-[#0284C7]" aria-hidden="true" />
+                <span>Respostas</span>
+                <span
+                  className="ml-0.5 rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold text-[#0F172A] tabular-nums"
+                  aria-hidden="true"
+                >
+                  {replyCountLabel}
+                </span>
+              </button>
+            )}
+          </div>
 
           <div className="flex items-center gap-1.5">
             {showFlagMenu && (

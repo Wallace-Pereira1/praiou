@@ -112,9 +112,47 @@ export interface BeachReport {
   helpfulCount?: number | null;
   viewerHasReacted?: boolean;
   helpfulLoadError?: boolean;
+  replyCount?: number | null;
+  replyLoadError?: boolean;
   viewerHasFlagged?: boolean;
   flagsCount?: number;
 }
+
+export interface BeachReportReply {
+  id: string;
+  reportId: string;
+  userId: string;
+  userName: string;
+  userUsername?: string;
+  userAvatarUrl?: string;
+  body: string;
+  moderationStatus: ReportModerationStatus;
+  createdAt: string;
+  viewerHasFlagged?: boolean;
+}
+
+export interface PaginatedRepliesResult {
+  items: BeachReportReply[];
+  totalCount: number;
+  visibleCount: number;
+  hasMore: boolean;
+  nextOffset: number;
+}
+
+export interface CreateReplyFallbackAuthor {
+  userName: string;
+  userUsername?: string;
+  userAvatarUrl?: string;
+}
+
+export interface CreateReplyPayload {
+  reportId: string;
+  body: string;
+  replyId?: string;
+  fallbackAuthor?: CreateReplyFallbackAuthor;
+}
+
+export type ModerationTargetKind = 'report' | 'reply';
 
 export interface ModerationReasonCount {
   reason: ReportFlagReason;
@@ -172,6 +210,42 @@ export interface ModerationQueueResult {
   resolvedReportsCount: number;
   hasMore: boolean;
   items: ModerationReportItem[];
+}
+
+export interface ModerationReplyItem {
+  replyId: string;
+  reportId: string;
+  beachId: string;
+  beachSlug: string;
+  beachName: string;
+  reportModerationStatus: ReportModerationStatus;
+  reportComment: string;
+  reportAuthorName: string;
+  authorId: string;
+  authorName: string;
+  authorUsername?: string;
+  authorAvatarUrl?: string;
+  body: string;
+  replyCreatedAt: string;
+  moderationStatus: ReportModerationStatus;
+  moderatedAt?: string;
+  pendingFlagsCount: number;
+  totalFlagsCount: number;
+  latestFlagAt?: string;
+  reasonSummary: ModerationReasonCount[];
+  flags: ModerationFlagItem[];
+  logs: ModerationLogItem[];
+}
+
+export interface ModerationRepliesQueueResult {
+  filter: ModerationQueueFilter;
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  pendingRepliesCount: number;
+  resolvedRepliesCount: number;
+  hasMore: boolean;
+  items: ModerationReplyItem[];
 }
 
 export interface CreateReportFallbackDisplay {

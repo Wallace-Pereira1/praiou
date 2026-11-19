@@ -4,12 +4,14 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AppLayout } from '../components/layout/AppLayout';
 import { ReportCard } from '../components/social/ReportCard';
 import { ReportFlagModal } from '../components/social/ReportFlagModal';
+import { ReportRepliesModal } from '../components/social/ReportRepliesModal';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorState } from '../components/ui/ErrorState';
 import { Skeleton } from '../components/ui/Skeleton';
 import { useApp } from '../context/AppContext';
+import { useReportConversation } from '../hooks/useReportConversation';
 import { useReportFlagActions } from '../hooks/useReportFlagActions';
 import { useReportHelpfulActions } from '../hooks/useReportHelpfulActions';
 import {
@@ -201,6 +203,13 @@ export function PublicProfilePage() {
     userId: user?.id ?? null,
     setItems: setReports,
     returnTo: canonicalReturnTo,
+  });
+
+  const conversation = useReportConversation({
+    authReady,
+    items: reports,
+    setItems: setReports,
+    baseReturnTo: canonicalReturnTo,
   });
 
   const handleShare = async () => {
@@ -449,6 +458,7 @@ export function PublicProfilePage() {
                         helpfulError={helpfulActions.helpfulErrorById[report.id] ?? null}
                         onToggleHelpful={helpfulActions.handleToggleHelpful}
                         onDismissHelpfulError={helpfulActions.dismissHelpfulError}
+                        onOpenReplies={conversation.openConversation}
                         onFlagRequest={
                           user?.id !== report.userId
                             ? flagActions.handleOpenFlagModal
@@ -481,6 +491,18 @@ export function PublicProfilePage() {
             </section>
           </>
         )}
+
+        <ReportRepliesModal
+          key={conversation.activeReport?.id ?? 'none'}
+          report={conversation.activeReport}
+          returnTo={
+            conversation.activeReport
+              ? conversation.getConversationReturnTo(conversation.activeReport.id)
+              : canonicalReturnTo
+          }
+          onClose={conversation.closeConversation}
+          onReplyCountChange={conversation.handleReplyCountChange}
+        />
 
         <ReportFlagModal
           report={flagActions.flagTargetReport}

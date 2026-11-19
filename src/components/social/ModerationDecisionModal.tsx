@@ -1,13 +1,16 @@
 import { AlertTriangle, EyeOff, RotateCcw, X } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { MAX_MODERATION_REASON_LENGTH } from '../../services/moderation';
-import type { ModerationReportItem } from '../../types';
+import type { ModerationTargetKind } from '../../types';
 import { Button } from '../ui/Button';
 
 interface ModerationDecisionModalProps {
   open: boolean;
   action: 'hide' | 'restore';
-  item: ModerationReportItem | null;
+  targetKind: ModerationTargetKind;
+  targetId: string | null;
+  targetSummary: string;
+  hasPhotoWarning?: boolean;
   isSubmitting: boolean;
   errorMessage: string | null;
   onConfirm: (reason: string) => Promise<void>;
@@ -17,7 +20,10 @@ interface ModerationDecisionModalProps {
 export function ModerationDecisionModal({
   open,
   action,
-  item,
+  targetKind,
+  targetId,
+  targetSummary,
+  hasPhotoWarning = false,
   isSubmitting,
   errorMessage,
   onConfirm,
@@ -35,7 +41,7 @@ export function ModerationDecisionModal({
       textareaRef.current?.focus();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [open, item?.reportId, action]);
+  }, [open, targetKind, targetId, action]);
 
   useEffect(() => {
     if (!open) return;
@@ -49,9 +55,10 @@ export function ModerationDecisionModal({
     return () => window.removeEventListener('keydown', handleKey);
   }, [open, isSubmitting, onClose]);
 
-  if (!open || !item) return null;
+  if (!open || !targetId) return null;
 
   const isHide = action === 'hide';
+  const isReply = targetKind === 'reply';
   const combinedError = localError || errorMessage;
 
   const handleSubmit = async (e: FormEvent) => {
@@ -62,8 +69,12 @@ export function ModerationDecisionModal({
     if (trimmed.length === 0) {
       setLocalError(
         isHide
-          ? 'Informe uma justificativa para ocultar este relato.'
-          : 'Informe uma justificativa para restaurar este relato.'
+          ? isReply
+            ? 'Informe uma justificativa para ocultar esta resposta.'
+            : 'Informe uma justificativa para ocultar este relato.'
+          : isReply
+            ? 'Informe uma justificativa para restaurar esta resposta.'
+            : 'Informe uma justificativa para restaurar este relato.'
       );
       return;
     }
@@ -113,11 +124,15 @@ export function ModerationDecisionModal({
                 className="font-display text-base sm:text-lg font-bold text-[#0F172A]"
               >
                 {isHide
-                  ? 'Confirmar ocultação do relato?'
-                  : 'Confirmar restauração do relato?'}
+                  ? isReply
+                    ? 'Confirmar ocultação da resposta?'
+                    : 'Confirmar ocultação do relato?'
+                  : isReply
+                    ? 'Confirmar restauração da resposta?'
+                    : 'Confirmar restauração do relato?'}
               </h2>
               <p className="mt-0.5 text-xs text-[#475569] break-words">
-                Relato de {item.authorName} em {item.beachName}
+                {targetSummary}
               </p>
             </div>
           </div>
@@ -136,11 +151,15 @@ export function ModerationDecisionModal({
         <form onSubmit={handleSubmit} noValidate className="mt-4 space-y-4">
           <p className="text-xs sm:text-sm leading-relaxed text-[#475569]">
             {isHide
-              ? 'O relato deixará de aparecer no feed, nas páginas de praias e nas consultas públicas, encerrando as denúncias pendentes. O autor continuará vendo um aviso no próprio perfil e poderá excluí-lo.'
-              : 'O relato voltará a aparecer nas consultas públicas do app, preservando foto e marcações de "Foi útil" existentes sem duplicação.'}
+              ? isReply
+                ? 'A resposta deixará de aparecer nas conversas públicas e não contará mais no total exibido do relato, encerrando as denúncias pendentes. O autor ainda poderá vê-la e excluí-la dentro da conversa.'
+                : 'O relato deixará de aparecer no feed, nas páginas de praias e nas consultas públicas, encerrando as denúncias pendentes. O autor continuará vendo um aviso no próprio perfil e poderá excluí-lo.'
+              : isReply
+                ? 'A resposta voltará a aparecer na conversa pública do relato e voltará a somar na contagem exibida, caso o relato pai também esteja visível.'
+                : 'O relato voltará a aparecer nas consultas públicas do app, preservando foto e marcações de "Foi útil" existentes sem duplicação.'}
           </p>
 
-          {isHide && item.photoUrl && (
+          {isHide && hasPhotoWarning && !isReply && (
             <div
               role="note"
               className="rounded-xl border border-[#F59E0B]/40 bg-[#FEF3C7] px-3.5 py-2.5 text-xs leading-relaxed text-[#92400E]"
@@ -177,7 +196,7 @@ export function ModerationDecisionModal({
               placeholder={
                 isHide
                   ? 'Ex.: Conteúdo ofensivo / exposição de dados pessoais.'
-                  : 'Ex.: Revisão manual concluiu que o relato cumpre as regras.'
+                  : 'Ex.: Revisão manual concluiu que o conteúdo cumpre as regras.'
               }
               className="mt-1.5 w-full rounded-xl border border-[#E2E8F0] bg-white p-3 text-sm text-[#0F172A] placeholder:text-[#475569]/70 focus:border-[#0284C7] focus:outline-none resize-none disabled:bg-slate-50"
             />

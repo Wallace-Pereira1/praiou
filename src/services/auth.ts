@@ -2,6 +2,7 @@ import type { User as SupabaseUser } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import type { AppUser } from '../types';
 import { clearPendingAuthReturnPath } from '../utils/authRedirect';
+import { clearAllReplyDrafts } from './replies';
 
 const LEGACY_DEMO_USER_KEY = 'praiou_demo_user';
 
@@ -140,6 +141,7 @@ export async function exchangeCodeForSession(code: string): Promise<AppUser> {
 export async function signOut(): Promise<void> {
   clearLegacyDemoSession();
   clearPendingAuthReturnPath();
+  clearAllReplyDrafts();
   exchangedUserByCode.clear();
   if (!supabase) return;
 
