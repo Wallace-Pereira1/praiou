@@ -1,82 +1,146 @@
-import { DEMO_USER_ID } from '../data/mockReports';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
+import { supabase } from '../lib/supabase';
 import type { AppUser } from '../types';
 
-const STORAGE_USER_KEY = 'praiou_demo_user';
+const LEGACY_DEMO_USER_KEY = 'praiou_demo_user';
 
-function delay(ms = 120): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
+const exchangeInFlightByCode = new Map<string, Promise<AppUser>>();
+const exchangedUserByCode = new Map<string, AppUser>();
 
-function readStoredUser(): AppUser | null {
+function clearLegacyDemoSession(): void {
   try {
-    const raw = localStorage.getItem(STORAGE_USER_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as AppUser;
+    localStorage.removeItem(LEGACY_DEMO_USER_KEY);
   } catch {
-    return null;
+    // Ignora falhas de acesso ao storage
   }
 }
 
-function writeStoredUser(user: AppUser | null): void {
-  try {
-    if (user) {
-      localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(user));
-    } else {
-      localStorage.removeItem(STORAGE_USER_KEY);
-    }
-  } catch {
-    // Ignora falhas de storage privado
-  }
+export function mapSupabaseUserToAppUser(
+  sbUser: SupabaseUser | null | undefined
+): AppUser | null {
+  if (!sbUser) return null;
+
+  const metadata = (sbUser.user_metadata ?? {}) as Record<string, unknown>;
+  const rawName =
+    (typeof metadata.full_name === 'string' && metadata.full_name.trim()) ||
+    (typeof metadata.name === 'string' && metadata.name.trim()) ||
+    (typeof metadata.preferred_username === 'string' && metadata.preferred_username.trim()) ||
+    (sbUser.email ? sbUser.email.split('@')[0] : '') ||
+    'Usuário Google';
+
+  const rawAvatar =
+    (typeof metadata.avatar_url === 'string' && metadata.avatar_url.trim()) ||
+    (typeof metadata.picture === 'string' && metadata.picture.trim()) ||
+    undefined;
+
+  return {
+    id: sbUser.id,
+    name: rawName,
+    email: sbUser.email ?? '',
+    provider: 'google',
+    avatarUrl: rawAvatar,
+  };
 }
 
 export async function getCurrentUser(): Promise<AppUser | null> {
-  await delay(80);
-  return readStoredUser();
+  clearLegacyDemoSession();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase.auth.getSession();
+  if (error) {
+    return null;
+  }
+
+  return mapSupabaseUserToAppUser(data.session?.user ?? null);
 }
 
-export async function signInWithGoogle(): Promise<AppUser> {
-  await delay(450);
-  const user: AppUser = {
-    id: DEMO_USER_ID,
-    name: 'Marina Costa',
-    email: 'marina.costa@gmail.com',
+export function onAuthStateChange(
+  callback: (user: AppUser | null) => void
+): () => void {
+  if (!supabase) {
+    return () => {};
+  }
+
+  const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange((_event, session) => {
+    clearLegacyDemoSession();
+    callback(mapSupabaseUserToAppUser(session?.user ?? null));
+  });
+
+  return () => {
+    subscription.unsubscribe();
+  };
+}
+
+export async function signInWithGoogle(): Promise<void> {
+  if (!supabase) {
+    throw new Error('Autenticação não configurada neste ambiente.');
+  }
+
+  clearLegacyDemoSession();
+
+  const { error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
-  };
-  writeStoredUser(user);
-  return user;
+    options: {
+      redirectTo: `${window.location.origin}/auth/callback`,
+    },
+  });
+
+  if (error) {
+    throw error;
+  }
 }
 
-export async function signInWithEmail(email: string): Promise<AppUser> {
-  await delay(450);
-  const cleanEmail = email.trim();
-  const derivedName =
-    cleanEmail
-      .split('@')[0]
-      .replace(/[._-]/g, ' ')
-      .replace(/\b\w/g, (c) => c.toUpperCase()) || 'Banhista RJ';
+export async function exchangeCodeForSession(code: string): Promise<AppUser> {
+  if (!supabase) {
+    throw new Error('Autenticação não configurada neste ambiente.');
+  }
 
-  const user: AppUser = {
-    id: DEMO_USER_ID,
-    name: derivedName,
-    email: cleanEmail,
-    provider: 'email',
-  };
-  writeStoredUser(user);
-  return user;
-}
+  const trimmedCode = code.trim();
+  if (!trimmedCode) {
+    throw new Error('Código de autenticação ausente.');
+  }
 
-export async function updateCurrentUserName(name: string): Promise<AppUser | null> {
-  await delay(150);
-  const current = readStoredUser();
-  const trimmed = name.trim();
-  if (!current || !trimmed) return current;
+  const cachedUser = exchangedUserByCode.get(trimmedCode);
+  if (cachedUser) {
+    return cachedUser;
+  }
 
-  const updated: AppUser = { ...current, name: trimmed };
-  writeStoredUser(updated);
-  return updated;
+  const existingPromise = exchangeInFlightByCode.get(trimmedCode);
+  if (existingPromise) {
+    return existingPromise;
+  }
+
+  const exchangePromise = (async () => {
+    clearLegacyDemoSession();
+
+    const { data, error } = await supabase.auth.exchangeCodeForSession(trimmedCode);
+    if (error) {
+      throw error;
+    }
+
+    const mapped = mapSupabaseUserToAppUser(data.session?.user ?? data.user ?? null);
+    if (!mapped) {
+      throw new Error('Sessão não retornada após validação do código.');
+    }
+
+    exchangedUserByCode.set(trimmedCode, mapped);
+    return mapped;
+  })().finally(() => {
+    exchangeInFlightByCode.delete(trimmedCode);
+  });
+
+  exchangeInFlightByCode.set(trimmedCode, exchangePromise);
+  return exchangePromise;
 }
 
 export async function signOut(): Promise<void> {
-  await delay(150);
-  writeStoredUser(null);
+  clearLegacyDemoSession();
+  if (!supabase) return;
+
+  const { error } = await supabase.auth.signOut();
+  if (error) {
+    throw error;
+  }
 }

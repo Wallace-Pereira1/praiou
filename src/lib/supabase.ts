@@ -12,5 +12,12 @@ export const isSupabaseConfigured =
   isConfiguredValue(supabaseAnonKey, 'SUA_SUPABASE_ANON_KEY');
 
 export const supabase: SupabaseClient | null = isSupabaseConfigured
-  ? createClient(supabaseUrl as string, supabaseAnonKey as string)
+  ? createClient(supabaseUrl as string, supabaseAnonKey as string, {
+      auth: {
+        flowType: 'pkce',
+        detectSessionInUrl: false,
+        persistSession: true,
+        autoRefreshToken: true,
+      },
+    })
   : null;

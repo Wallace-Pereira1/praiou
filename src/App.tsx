@@ -6,6 +6,7 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AppProvider } from './context/AppContext';
+import { AuthCallbackPage } from './pages/AuthCallbackPage';
 import { BeachDetailPage } from './pages/BeachDetailPage';
 import { FeedPage } from './pages/FeedPage';
 import { HomePage } from './pages/HomePage';
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="/feed" element={<FeedPage />} />
           <Route path="/relatar" element={<NewReportPage />} />
           <Route path="/entrar" element={<LoginPage />} />
+          <Route path="/auth/callback" element={<AuthCallbackPage />} />
           <Route path="/perfil" element={<ProfilePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -1,5 +1,5 @@
-import { Check, LogIn, LogOut, Pencil, Plus, User as UserIcon } from 'lucide-react';
-import { useMemo, useState, type FormEvent } from 'react';
+import { LogIn, LogOut, Plus, User as UserIcon } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AppLayout } from '../components/layout/AppLayout';
 import { ReportCard } from '../components/social/ReportCard';
@@ -11,12 +11,16 @@ import { useApp } from '../context/AppContext';
 import { getInitials } from '../utils/formatters';
 
 export function ProfilePage() {
-  const { user, reports, updateUserName, deleteReport, logout } = useApp();
+  const { user, reports, deleteReport, logout } = useApp();
   const navigate = useNavigate();
 
-  const [isEditingName, setIsEditingName] = useState(false);
-  const [draftName, setDraftName] = useState(user?.name ?? '');
+  const [avatarError, setAvatarError] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [reportPendingDelete, setReportPendingDelete] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAvatarError(false);
+  }, [user?.avatarUrl]);
 
   const userReports = useMemo(
     () => (user ? reports.filter((r) => r.userId === user.id) : []),
@@ -28,14 +32,6 @@ export function ProfilePage() {
     [userReports]
   );
 
-  const handleSaveName = async (e: FormEvent) => {
-    e.preventDefault();
-    if (draftName.trim()) {
-      await updateUserName(draftName);
-    }
-    setIsEditingName(false);
-  };
-
   const handleConfirmDelete = async () => {
     if (reportPendingDelete) {
       const targetId = reportPendingDelete;
@@ -45,8 +41,13 @@ export function ProfilePage() {
   };
 
   const handleLogout = async () => {
-    await logout();
-    navigate('/');
+    setIsLoggingOut(true);
+    try {
+      await logout();
+      navigate('/');
+    } finally {
+      setIsLoggingOut(false);
+    }
   };
 
   return (
@@ -74,63 +75,41 @@ export function ProfilePage() {
           <Card padding="lg">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-4 min-w-0">
-                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-sky-100 font-display text-xl font-extrabold text-[#0284C7]">
-                  {getInitials(user.name)}
-                </div>
+                {user.avatarUrl && !avatarError ? (
+                  <img
+                    src={user.avatarUrl}
+                    alt={user.name}
+                    referrerPolicy="no-referrer"
+                    onError={() => setAvatarError(true)}
+                    className="h-16 w-16 shrink-0 rounded-full border border-[#E2E8F0] object-cover"
+                  />
+                ) : (
+                  <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-sky-100 font-display text-xl font-extrabold text-[#0284C7]">
+                    {getInitials(user.name)}
+                  </div>
+                )}
 
                 <div className="min-w-0 flex-1">
-                  {!isEditingName ? (
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <h1 className="truncate font-display text-xl font-bold text-[#0F172A]">
-                        {user.name}
-                      </h1>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDraftName(user.name);
-                          setIsEditingName(true);
-                        }}
-                        aria-label="Editar nome"
-                        className="min-h-[44px] inline-flex items-center gap-1 rounded-xl px-2.5 text-xs font-semibold text-[#0284C7] hover:bg-sky-50 transition-colors"
-                      >
-                        <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-                        Editar
-                      </button>
-                    </div>
-                  ) : (
-                    <form onSubmit={handleSaveName} className="flex flex-wrap items-center gap-2">
-                      <input
-                        type="text"
-                        value={draftName}
-                        onChange={(e) => setDraftName(e.target.value)}
-                        maxLength={40}
-                        aria-label="Nome de exibição"
-                        className="min-h-[44px] rounded-xl border border-[#0284C7] bg-white px-3 text-sm font-semibold text-[#0F172A] focus:outline-none"
-                        autoFocus
-                      />
-                      <Button type="submit" size="md">
-                        <Check className="h-4 w-4" aria-hidden="true" />
-                        Salvar
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="md"
-                        onClick={() => setIsEditingName(false)}
-                      >
-                        Cancelar
-                      </Button>
-                    </form>
-                  )}
+                  <h1 className="truncate font-display text-xl font-bold text-[#0F172A]">
+                    {user.name}
+                  </h1>
 
                   <p className="mt-0.5 truncate text-sm text-[#475569]">
-                    {user.email} · {user.provider === 'google' ? 'Conta Google' : 'E-mail'}
+                    {user.email ? `${user.email} · ` : ''}Conta Google
                   </p>
                 </div>
               </div>
 
-              <Button variant="secondary" onClick={handleLogout}>
-                <LogOut className="h-4 w-4 text-[#475569]" aria-hidden="true" />
-                Sair
+              <Button
+                variant="secondary"
+                loading={isLoggingOut}
+                disabled={isLoggingOut}
+                onClick={handleLogout}
+              >
+                {!isLoggingOut && (
+                  <LogOut className="h-4 w-4 text-[#475569]" aria-hidden="true" />
+                )}
+                {isLoggingOut ? 'Saindo...' : 'Sair'}
               </Button>
             </div>
 

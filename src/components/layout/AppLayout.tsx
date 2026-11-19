@@ -1,5 +1,5 @@
 import { List, Plus, Star, User } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { getInitials } from '../../utils/formatters';
@@ -10,6 +10,11 @@ interface AppLayoutProps {
 
 export function AppLayout({ children }: AppLayoutProps) {
   const { user } = useApp();
+  const [avatarError, setAvatarError] = useState(false);
+
+  useEffect(() => {
+    setAvatarError(false);
+  }, [user?.avatarUrl]);
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F8FAFC] text-[#0F172A]">
@@ -80,9 +85,19 @@ export function AppLayout({ children }: AppLayoutProps) {
               className="md:hidden min-h-[44px] min-w-[44px] flex items-center justify-end text-sm font-semibold text-[#0284C7] whitespace-nowrap shrink-0"
             >
               {user ? (
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-100 text-xs font-bold text-[#0284C7]">
-                  {getInitials(user.name)}
-                </span>
+                user.avatarUrl && !avatarError ? (
+                  <img
+                    src={user.avatarUrl}
+                    alt={user.name}
+                    referrerPolicy="no-referrer"
+                    onError={() => setAvatarError(true)}
+                    className="h-8 w-8 rounded-full border border-[#E2E8F0] object-cover"
+                  />
+                ) : (
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-100 text-xs font-bold text-[#0284C7]">
+                    {getInitials(user.name)}
+                  </span>
+                )
               ) : (
                 'Entrar'
               )}

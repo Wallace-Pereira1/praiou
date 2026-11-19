@@ -35,8 +35,8 @@ interface AppContextValue {
   addReport: (payload: CreateReportPayload) => Promise<BeachReport>;
   deleteReport: (reportId: string) => Promise<void>;
   flagReport: (reportId: string) => Promise<void>;
-  loginDemo: (provider: 'google' | 'email', email?: string) => Promise<void>;
-  updateUserName: (name: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
+  exchangeOAuthCode: (code: string) => Promise<AppUser>;
   logout: () => Promise<void>;
 }
 
@@ -91,6 +91,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void loadAll(false);
   }, [loadAll]);
 
+  useEffect(() => {
+    return authService.onAuthStateChange((nextUser) => {
+      setUser(nextUser);
+    });
+  }, []);
+
   const refreshData = useCallback(
     async (forceRefresh = true) => {
       await loadAll(forceRefresh);
@@ -130,33 +136,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   };
 
-  const loginDemo = async (
-    provider: 'google' | 'email',
-    email?: string
-  ): Promise<void> => {
-    const loggedUser =
-      provider === 'google'
-        ? await authService.signInWithGoogle()
-        : await authService.signInWithEmail(email ?? '');
-    setUser(loggedUser);
-  };
+  const signInWithGoogle = useCallback(async (): Promise<void> => {
+    await authService.signInWithGoogle();
+  }, []);
 
-  const updateUserName = async (name: string): Promise<void> => {
-    const updated = await authService.updateCurrentUserName(name);
-    if (!updated) return;
-    setUser(updated);
-    reportsService.syncAuthorNameInReports(updated.id, updated.name);
-    setReports((prev) =>
-      prev.map((r) =>
-        r.userId === updated.id ? { ...r, userName: updated.name } : r
-      )
-    );
-  };
+  const exchangeOAuthCode = useCallback(async (code: string): Promise<AppUser> => {
+    const authenticatedUser = await authService.exchangeCodeForSession(code);
+    setUser(authenticatedUser);
+    return authenticatedUser;
+  }, []);
 
-  const logout = async (): Promise<void> => {
+  const logout = useCallback(async (): Promise<void> => {
     await authService.signOut();
     setUser(null);
-  };
+  }, []);
 
   return (
     <AppContext.Provider
@@ -175,8 +168,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addReport,
         deleteReport,
         flagReport,
-        loginDemo,
-        updateUserName,
+        signInWithGoogle,
+        exchangeOAuthCode,
         logout,
       }}
     >
