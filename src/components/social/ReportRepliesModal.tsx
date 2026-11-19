@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   EyeOff,
   Flag,
+  Heart,
   Loader2,
   MapPin,
   MessageCircle,
@@ -31,13 +32,16 @@ import {
 import {
   DEFAULT_REPLIES_PAGE_SIZE,
   MAX_REPLY_LENGTH,
+  ReplyLikeMutationError,
   ReplyPublishError,
   clearReplyDraft,
   createReportReply,
   deleteReportReply,
   getRepliesByReport,
   getReplyDraft,
+  getReplyLikeSummaries,
   saveReplyDraft,
+  toggleReplyLike,
 } from '../../services/replies';
 import type {
   BeachReport,
@@ -97,11 +101,27 @@ export function ReportRepliesModal({
   const [flagError, setFlagError] = useState<string | null>(null);
   const [isFlagSubmitting, setIsFlagSubmitting] = useState(false);
 
+  const [pendingLikeIds, setPendingLikeIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [likeErrorByReplyId, setLikeErrorByReplyId] = useState<
+    Record<string, string>
+  >({});
+  const [guestLikeNoticeReplyId, setGuestLikeNoticeReplyId] = useState<
+    string | null
+  >(null);
+  const [isRetryingLikes, setIsRetryingLikes] = useState(false);
+
   const loadRequestIdRef = useRef(0);
   const deletedReplyIdsRef = useRef<Set<string>>(new Set());
   const isSubmittingRef = useRef(false);
   const pendingReplyIdRef = useRef<string | null>(null);
   const lastDraftBodyForAttemptRef = useRef<string>('');
+  const pendingLikeIdsRef = useRef<Set<string>>(new Set());
+  const likeMutationSeqRef = useRef<Record<string, number>>({});
+  const likeSessionEpochRef = useRef(0);
+  const currentUserIdRef = useRef<string | null>(user?.id ?? null);
+  currentUserIdRef.current = user?.id ?? null;
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -185,6 +205,11 @@ export function ReportRepliesModal({
     deletedReplyIdsRef.current = new Set();
     pendingReplyIdRef.current = null;
     lastDraftBodyForAttemptRef.current = '';
+    likeSessionEpochRef.current += 1;
+    pendingLikeIdsRef.current = new Set();
+    setPendingLikeIds(new Set());
+    setLikeErrorByReplyId({});
+    setGuestLikeNoticeReplyId(null);
     setLoadedReplies([]);
     setRecentTailReplies([]);
     setHasMore(false);
@@ -505,6 +530,162 @@ export function ReportRepliesModal({
     }
   };
 
+  const hasLikeLoadError =
+    loadedReplies.some((item) => item.likeLoadError) ||
+    recentTailReplies.some((item) => item.likeLoadError);
+
+  const patchReplyInLists = (
+    replyId: string,
+    patch: Partial<BeachReportReply>
+  ) => {
+    setLoadedReplies((prev) =>
+      prev.map((item) => (item.id === replyId ? { ...item, ...patch } : item))
+    );
+    setRecentTailReplies((prev) =>
+      prev.map((item) => (item.id === replyId ? { ...item, ...patch } : item))
+    );
+  };
+
+  const handleRetryReplyLikes = async () => {
+    if (isRetryingLikes) return;
+    const visibleIds = Array.from(
+      new Set(
+        [...loadedReplies, ...recentTailReplies]
+          .filter((item) => item.moderationStatus === 'visible')
+          .map((item) => item.id)
+      )
+    );
+    if (visibleIds.length === 0) return;
+
+    const sessionEpoch = likeSessionEpochRef.current;
+    const actorUserId = currentUserIdRef.current;
+    setIsRetryingLikes(true);
+
+    try {
+      const likeMap = await getReplyLikeSummaries(visibleIds);
+      if (
+        likeSessionEpochRef.current !== sessionEpoch ||
+        currentUserIdRef.current !== actorUserId
+      ) {
+        return;
+      }
+
+      const applySummaries = (prev: BeachReportReply[]) =>
+        prev.map((item) => {
+          if (item.moderationStatus === 'hidden') return item;
+          const summary = likeMap.get(item.id);
+          return {
+            ...item,
+            likeCount: summary?.likeCount ?? 0,
+            likedByMe: actorUserId ? (summary?.likedByMe ?? false) : false,
+            likeLoadError: false,
+          };
+        });
+
+      setLoadedReplies(applySummaries);
+      setRecentTailReplies(applySummaries);
+    } catch {
+      // Mantém estado de erro recuperável caso a tentativa falhe
+    } finally {
+      if (likeSessionEpochRef.current === sessionEpoch) {
+        setIsRetryingLikes(false);
+      }
+    }
+  };
+
+  const handleToggleReplyLike = async (reply: BeachReportReply) => {
+    if (reply.moderationStatus === 'hidden') return;
+
+    const actorUserId = currentUserIdRef.current;
+    if (!actorUserId) {
+      setGuestLikeNoticeReplyId((prev) => (prev === reply.id ? null : reply.id));
+      return;
+    }
+
+    if (pendingLikeIdsRef.current.has(reply.id)) {
+      return;
+    }
+
+    const prevLiked = Boolean(reply.likedByMe);
+    const prevLoadError = Boolean(reply.likeLoadError);
+    const prevCount =
+      typeof reply.likeCount === 'number' && !prevLoadError ? reply.likeCount : 0;
+    const optimisticLiked = !prevLiked;
+    const optimisticCount = Math.max(0, prevCount + (optimisticLiked ? 1 : -1));
+
+    const sessionEpoch = likeSessionEpochRef.current;
+    const mutationSeq = (likeMutationSeqRef.current[reply.id] ?? 0) + 1;
+    likeMutationSeqRef.current[reply.id] = mutationSeq;
+
+    pendingLikeIdsRef.current.add(reply.id);
+    setPendingLikeIds(new Set(pendingLikeIdsRef.current));
+    setGuestLikeNoticeReplyId(null);
+    setLikeErrorByReplyId((prev) => {
+      if (!(reply.id in prev)) return prev;
+      const next = { ...prev };
+      delete next[reply.id];
+      return next;
+    });
+
+    // Atualização otimista com rollback garantido caso o servidor falhe
+    patchReplyInLists(reply.id, {
+      likedByMe: optimisticLiked,
+      likeCount: optimisticCount,
+      likeLoadError: false,
+    });
+
+    try {
+      const confirmed = await toggleReplyLike(reply.id);
+
+      if (
+        likeSessionEpochRef.current !== sessionEpoch ||
+        currentUserIdRef.current !== actorUserId ||
+        likeMutationSeqRef.current[reply.id] !== mutationSeq
+      ) {
+        return;
+      }
+
+      patchReplyInLists(reply.id, {
+        likedByMe: confirmed.likedByMe,
+        likeCount: confirmed.likeCount,
+        likeLoadError: false,
+      });
+    } catch (err) {
+      if (
+        likeSessionEpochRef.current !== sessionEpoch ||
+        currentUserIdRef.current !== actorUserId ||
+        likeMutationSeqRef.current[reply.id] !== mutationSeq
+      ) {
+        return;
+      }
+
+      if (err instanceof ReplyLikeMutationError && err.reconciled) {
+        patchReplyInLists(reply.id, {
+          likedByMe: err.reconciled.likedByMe,
+          likeCount: err.reconciled.likeCount,
+          likeLoadError: false,
+        });
+      } else {
+        patchReplyInLists(reply.id, {
+          likedByMe: prevLiked,
+          likeCount: prevLoadError ? null : prevCount,
+          likeLoadError: prevLoadError,
+        });
+      }
+
+      setLikeErrorByReplyId((prev) => ({
+        ...prev,
+        [reply.id]:
+          err instanceof Error
+            ? err.message
+            : 'Não foi possível atualizar sua curtida agora. Tente novamente.',
+      }));
+    } finally {
+      pendingLikeIdsRef.current.delete(reply.id);
+      setPendingLikeIds(new Set(pendingLikeIdsRef.current));
+    }
+  };
+
   const reportAuthorHref = report.userUsername
     ? `/u/${encodeURIComponent(report.userUsername)}`
     : null;
@@ -673,6 +854,114 @@ export function ReportRepliesModal({
         <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-[#0F172A]">
           {reply.body}
         </p>
+
+        {/* Ação de curtir resposta (somente respostas visíveis) */}
+        {!isHidden && (() => {
+          const isLikePending = pendingLikeIds.has(reply.id);
+          const isLiked = Boolean(user?.id && reply.likedByMe);
+          const hasKnownLikeCount =
+            typeof reply.likeCount === 'number' && !reply.likeLoadError;
+          const likeCountLabel = hasKnownLikeCount ? String(reply.likeCount) : '—';
+          const likeCountAccessible = hasKnownLikeCount
+            ? reply.likeCount === 1
+              ? '1 curtida'
+              : `${reply.likeCount} curtidas`
+            : 'Contagem de curtidas indisponível no momento';
+          const likeAriaLabel = !user
+            ? `Entrar com Google para curtir a resposta de ${reply.userName}. ${likeCountAccessible}.`
+            : isLiked
+              ? `Descurtir resposta de ${reply.userName}. ${likeCountAccessible}.`
+              : `Curtir resposta de ${reply.userName}. ${likeCountAccessible}.`;
+
+          return (
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={isLikePending}
+                aria-pressed={isLiked}
+                aria-label={likeAriaLabel}
+                onClick={() => void handleToggleReplyLike(reply)}
+                className={`min-h-[38px] inline-flex items-center gap-1.5 rounded-lg px-2.5 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-[#0284C7] disabled:opacity-65 ${
+                  isLiked
+                    ? 'border-2 border-[#0284C7] bg-sky-50 font-bold text-[#0284C7]'
+                    : 'border border-[#E2E8F0] bg-white font-semibold text-[#475569] hover:border-[#0284C7]/50 hover:text-[#0F172A]'
+                }`}
+              >
+                {isLikePending ? (
+                  <Loader2
+                    className="h-3.5 w-3.5 animate-spin text-[#0284C7]"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <Heart
+                    className={`h-3.5 w-3.5 ${isLiked ? 'fill-current' : ''}`}
+                    aria-hidden="true"
+                  />
+                )}
+                <span>Curtir</span>
+                <span
+                  className={`rounded px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${
+                    isLiked
+                      ? 'bg-[#0284C7] text-white'
+                      : 'bg-slate-100 text-[#0F172A]'
+                  }`}
+                  aria-hidden="true"
+                >
+                  {likeCountLabel}
+                </span>
+              </button>
+            </div>
+          );
+        })()}
+
+        {!user && guestLikeNoticeReplyId === reply.id && !isHidden && (
+          <div
+            role="status"
+            className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#0284C7]/30 bg-sky-50 px-3 py-2 text-xs text-[#0F172A]"
+          >
+            <span className="min-w-0 break-words font-medium">
+              Entre com sua conta Google para curtir esta resposta.
+            </span>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={redirectToLoginWithReturn}
+                className="min-h-[32px] rounded-lg bg-[#0284C7] px-2.5 text-xs font-semibold text-white hover:bg-sky-700 transition-colors"
+              >
+                Entrar com Google
+              </button>
+              <button
+                type="button"
+                onClick={() => setGuestLikeNoticeReplyId(null)}
+                className="text-xs font-semibold text-[#475569] hover:text-[#0F172A] underline"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        )}
+
+        {likeErrorByReplyId[reply.id] && (
+          <div
+            role="alert"
+            className="mt-2 flex items-center justify-between gap-2 rounded-lg border border-[#EF4444]/30 bg-[#FEE2E2] px-3 py-1.5 text-xs font-medium text-[#991B1B]"
+          >
+            <span className="min-w-0 break-words">{likeErrorByReplyId[reply.id]}</span>
+            <button
+              type="button"
+              onClick={() =>
+                setLikeErrorByReplyId((prev) => {
+                  const next = { ...prev };
+                  delete next[reply.id];
+                  return next;
+                })
+              }
+              className="shrink-0 font-bold underline"
+            >
+              Fechar
+            </button>
+          </div>
+        )}
 
         {/* Confirmação inline de exclusão (sem empilhar modal) */}
         {isConfirmingDelete && (
@@ -1011,6 +1300,26 @@ export function ReportRepliesModal({
                 </div>
               ) : (
                 <>
+                  {hasLikeLoadError && (
+                    <div
+                      role="alert"
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#F59E0B]/40 bg-[#FEF3C7] px-3.5 py-2 text-xs font-medium text-[#92400E]"
+                    >
+                      <span className="min-w-0 flex-1 break-words">
+                        Não foi possível carregar as curtidas das respostas agora.
+                      </span>
+                      <Button
+                        variant="secondary"
+                        size="md"
+                        loading={isRetryingLikes}
+                        disabled={isRetryingLikes}
+                        onClick={() => void handleRetryReplyLikes()}
+                      >
+                        Tentar novamente
+                      </Button>
+                    </div>
+                  )}
+
                   {loadedReplies.map((reply) => renderReplyItem(reply, false))}
 
                   {loadError && loadedReplies.length > 0 && (

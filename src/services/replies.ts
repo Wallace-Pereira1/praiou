@@ -4,6 +4,7 @@ import type {
   CreateReplyFallbackAuthor,
   CreateReplyPayload,
   PaginatedRepliesResult,
+  ReplyLikeSummary,
 } from '../types';
 import { generateReportUuid } from '../utils/reportImage';
 import { getMyFlaggedReplyIds } from './moderation';
@@ -13,6 +14,16 @@ export const DEFAULT_REPLIES_PAGE_SIZE = 20;
 export const MAX_REPLY_LENGTH = 500;
 const MAX_REPLY_SUMMARY_BATCH = 50;
 const REPLY_DRAFT_KEY_PREFIX = 'praiou_reply_draft:';
+
+export class ReplyLikeMutationError extends Error {
+  readonly reconciled?: ReplyLikeSummary;
+
+  constructor(message: string, reconciled?: ReplyLikeSummary) {
+    super(message);
+    this.name = 'ReplyLikeMutationError';
+    this.reconciled = reconciled;
+  }
+}
 
 export class ReplyPublishError extends Error {
   readonly ambiguous: boolean;
@@ -55,6 +66,18 @@ interface ReplySummaryRpcRow {
   reply_count: number | string | null;
 }
 
+interface ReplyLikeSummaryRpcRow {
+  reply_id: string;
+  like_count: number | string | null;
+  liked_by_me: boolean | null;
+}
+
+interface ToggleReplyLikeRpcRow {
+  reply_id: string;
+  liked: boolean | null;
+  like_count: number | string | null;
+}
+
 const BASE_REPLY_SELECT =
   'id, report_id, user_id, body, moderation_status, created_at';
 
@@ -82,9 +105,12 @@ function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
 function mapSupabaseReply(
   row: SupabaseReplyRow,
   fallbackAuthor?: CreateReplyFallbackAuthor,
-  viewerHasFlagged = false
+  viewerHasFlagged = false,
+  likeSummary?: ReplyLikeSummary,
+  likeLoadError = false
 ): BeachReportReply {
   const profile = unwrapRelation(row.profiles);
+  const isHidden = row.moderation_status === 'hidden';
 
   return {
     id: row.id,
@@ -102,9 +128,16 @@ function mapSupabaseReply(
       resolveProfileAvatarUrl(profile?.avatar_path, profile?.avatar_url) ??
       fallbackAuthor?.userAvatarUrl,
     body: row.body ?? '',
-    moderationStatus: row.moderation_status === 'hidden' ? 'hidden' : 'visible',
+    moderationStatus: isHidden ? 'hidden' : 'visible',
     createdAt: row.created_at,
     viewerHasFlagged,
+    likeCount: isHidden
+      ? null
+      : likeLoadError
+        ? null
+        : (likeSummary?.likeCount ?? 0),
+    likedByMe: isHidden || likeLoadError ? false : (likeSummary?.likedByMe ?? false),
+    likeLoadError: isHidden ? false : likeLoadError,
   };
 }
 
@@ -196,6 +229,128 @@ export async function getReportReplySummaries(
   return map;
 }
 
+export async function getReplyLikeSummaries(
+  replyIds: string[]
+): Promise<Map<string, ReplyLikeSummary>> {
+  const map = new Map<string, ReplyLikeSummary>();
+  const uniqueIds = Array.from(
+    new Set(replyIds.map((id) => id.trim()).filter(Boolean))
+  );
+
+  if (uniqueIds.length === 0) {
+    return map;
+  }
+
+  if (!supabase) {
+    throw new Error('Conexão com o Supabase não configurada.');
+  }
+
+  for (let i = 0; i < uniqueIds.length; i += MAX_REPLY_SUMMARY_BATCH) {
+    const batch = uniqueIds.slice(i, i + MAX_REPLY_SUMMARY_BATCH);
+    const { data, error } = await supabase.rpc('get_beach_report_reply_like_summary', {
+      p_reply_ids: batch,
+    });
+
+    if (error || !Array.isArray(data)) {
+      throw new Error('Não foi possível carregar as curtidas das respostas agora.');
+    }
+
+    for (const rawRow of data as ReplyLikeSummaryRpcRow[]) {
+      if (!rawRow?.reply_id) continue;
+      const numericCount = Number(rawRow.like_count ?? 0);
+      map.set(rawRow.reply_id, {
+        replyId: rawRow.reply_id,
+        likeCount: Number.isFinite(numericCount)
+          ? Math.max(0, Math.round(numericCount))
+          : 0,
+        likedByMe: Boolean(rawRow.liked_by_me),
+      });
+    }
+  }
+
+  return map;
+}
+
+async function tryGetSingleReplyLikeSummary(
+  replyId: string
+): Promise<ReplyLikeSummary | undefined> {
+  try {
+    const map = await getReplyLikeSummaries([replyId]);
+    return map.get(replyId);
+  } catch {
+    return undefined;
+  }
+}
+
+export async function toggleReplyLike(replyId: string): Promise<ReplyLikeSummary> {
+  if (!supabase) {
+    throw new ReplyLikeMutationError('Conexão com o Supabase não configurada.');
+  }
+
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  const sessionUser = sessionData.session?.user;
+
+  if (sessionError || !sessionUser) {
+    throw new ReplyLikeMutationError(
+      'Entre com sua conta Google para curtir respostas.'
+    );
+  }
+
+  let data: unknown = null;
+  let error: { code?: string; message?: string } | null = null;
+
+  try {
+    const response = await supabase.rpc('toggle_beach_report_reply_like', {
+      p_reply_id: replyId,
+    });
+    data = response.data;
+    error = response.error;
+  } catch {
+    error = { message: 'network_error' };
+  }
+
+  if (error || !Array.isArray(data) || data.length === 0) {
+    const reconciled = await tryGetSingleReplyLikeSummary(replyId);
+
+    if (error?.code === '42501') {
+      throw new ReplyLikeMutationError(
+        'Entre com sua conta Google para curtir respostas.',
+        reconciled
+      );
+    }
+
+    if (error?.code === 'P0002') {
+      throw new ReplyLikeMutationError(
+        'Esta resposta não está mais disponível para curtidas.',
+        reconciled
+      );
+    }
+
+    if (error?.code === '22023') {
+      throw new ReplyLikeMutationError(
+        'Resposta inválida para curtida.',
+        reconciled
+      );
+    }
+
+    throw new ReplyLikeMutationError(
+      'Não foi possível atualizar sua curtida agora. Tente novamente.',
+      reconciled
+    );
+  }
+
+  const row = data[0] as ToggleReplyLikeRpcRow;
+  const numericCount = Number(row.like_count ?? 0);
+
+  return {
+    replyId: row.reply_id || replyId,
+    likedByMe: Boolean(row.liked),
+    likeCount: Number.isFinite(numericCount)
+      ? Math.max(0, Math.round(numericCount))
+      : 0,
+  };
+}
+
 export async function getRepliesByReport(
   reportId: string,
   options: { offset?: number; pageSize?: number } = {}
@@ -237,19 +392,39 @@ export async function getRepliesByReport(
   }
 
   const rows = (data ?? []) as SupabaseReplyRow[];
-  const replyIds = rows.map((row) => row.id);
+  const visibleReplyIds = rows
+    .filter((row) => row.moderation_status !== 'hidden')
+    .map((row) => row.id);
 
   let flaggedSet = new Set<string>();
-  if (replyIds.length > 0) {
-    try {
-      flaggedSet = await getMyFlaggedReplyIds(replyIds);
-    } catch {
-      flaggedSet = new Set();
+  let likeMap = new Map<string, ReplyLikeSummary>();
+  let likeLoadError = false;
+
+  if (visibleReplyIds.length > 0) {
+    const [flaggedOutcome, likeOutcome] = await Promise.allSettled([
+      getMyFlaggedReplyIds(visibleReplyIds),
+      getReplyLikeSummaries(visibleReplyIds),
+    ]);
+
+    if (flaggedOutcome.status === 'fulfilled') {
+      flaggedSet = flaggedOutcome.value;
+    }
+
+    if (likeOutcome.status === 'fulfilled') {
+      likeMap = likeOutcome.value;
+    } else {
+      likeLoadError = true;
     }
   }
 
   const items = rows.map((row) =>
-    mapSupabaseReply(row, undefined, flaggedSet.has(row.id))
+    mapSupabaseReply(
+      row,
+      undefined,
+      flaggedSet.has(row.id),
+      likeMap.get(row.id),
+      likeLoadError
+    )
   );
   const totalCount = typeof count === 'number' ? count : safeOffset + items.length;
   const visibleFallback = items.filter((r) => r.moderationStatus === 'visible').length;

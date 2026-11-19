@@ -129,6 +129,15 @@ export interface BeachReportReply {
   moderationStatus: ReportModerationStatus;
   createdAt: string;
   viewerHasFlagged?: boolean;
+  likeCount?: number | null;
+  likedByMe?: boolean;
+  likeLoadError?: boolean;
+}
+
+export interface ReplyLikeSummary {
+  replyId: string;
+  likeCount: number;
+  likedByMe: boolean;
 }
 
 export interface PaginatedRepliesResult {
