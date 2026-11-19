@@ -39,6 +39,8 @@ interface AppContextValue {
   updateProfileName: (displayName: string) => Promise<UserProfile>;
   uploadProfileAvatar: (blob: Blob) => Promise<UserProfile>;
   removeProfileAvatar: () => Promise<UserProfile>;
+  uploadProfileBanner: (blob: Blob) => Promise<UserProfile>;
+  removeProfileBanner: () => Promise<UserProfile>;
   signInWithGoogle: () => Promise<void>;
   exchangeOAuthCode: (code: string) => Promise<AppUser>;
   logout: () => Promise<void>;
@@ -174,6 +176,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return updated;
   }, []);
 
+  const uploadProfileBanner = useCallback(async (blob: Blob): Promise<UserProfile> => {
+    const updated = await profilesService.uploadOwnBanner(blob);
+    setProfile(updated);
+    setProfileError(null);
+    return updated;
+  }, []);
+
+  const removeProfileBanner = useCallback(async (): Promise<UserProfile> => {
+    const updated = await profilesService.removeOwnBanner();
+    setProfile(updated);
+    setProfileError(null);
+    return updated;
+  }, []);
+
   const loadAll = useCallback(async (forceRefresh = false) => {
     setLoadError(null);
     try {
@@ -244,6 +260,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       name: profile?.displayName ?? authUser.name,
       avatarUrl: profile?.avatarUrl ?? authUser.avatarUrl,
       hasCustomAvatar: Boolean(profile?.avatarPath),
+      bannerUrl: profile?.bannerUrl,
+      hasCustomBanner: Boolean(profile?.bannerPath),
     };
   }, [authUser, profile]);
 
@@ -267,6 +285,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updateProfileName,
         uploadProfileAvatar,
         removeProfileAvatar,
+        uploadProfileBanner,
+        removeProfileBanner,
         signInWithGoogle,
         exchangeOAuthCode,
         logout,

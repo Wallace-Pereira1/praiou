@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   Camera,
   Check,
+  Image as ImageIcon,
   Trash2,
   X,
 } from 'lucide-react';
@@ -27,10 +28,17 @@ interface EditProfileModalProps {
   isRemovingAvatar: boolean;
   avatarActionError: string | null;
   avatarSuccessMessage: string | null;
+  isUploadingBanner: boolean;
+  isRemovingBanner: boolean;
+  bannerActionError: string | null;
+  bannerSuccessMessage: string | null;
   returnFocusRef: RefObject<HTMLButtonElement | null>;
   onDismissAvatarError: () => void;
   onSelectAvatarFile: (e: ChangeEvent<HTMLInputElement>) => void;
   onRemoveCustomAvatar: () => Promise<void>;
+  onDismissBannerError: () => void;
+  onSelectBannerFile: (e: ChangeEvent<HTMLInputElement>) => void;
+  onRemoveCustomBanner: () => Promise<void>;
   onSaveName: (displayName: string) => Promise<void>;
   onClose: () => void;
 }
@@ -44,29 +52,48 @@ export function EditProfileModal({
   isRemovingAvatar,
   avatarActionError,
   avatarSuccessMessage,
+  isUploadingBanner,
+  isRemovingBanner,
+  bannerActionError,
+  bannerSuccessMessage,
   returnFocusRef,
   onDismissAvatarError,
   onSelectAvatarFile,
   onRemoveCustomAvatar,
+  onDismissBannerError,
+  onSelectBannerFile,
+  onRemoveCustomBanner,
   onSaveName,
   onClose,
 }: EditProfileModalProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const bannerInputRef = useRef<HTMLInputElement | null>(null);
+  const lastCropSelectorRef = useRef<string>('[data-photo-trigger="true"]');
   const wasOpenRef = useRef(false);
   const wasSuspendedRef = useRef(false);
 
   const [avatarLoadError, setAvatarLoadError] = useState(false);
+  const [bannerLoadError, setBannerLoadError] = useState(false);
   const [draftName, setDraftName] = useState(user.name);
   const [isSavingName, setIsSavingName] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
   const [nameSuccessMessage, setNameSuccessMessage] = useState<string | null>(null);
 
-  const isBusy = isSavingName || isUploadingAvatar || isRemovingAvatar;
+  const isBusy =
+    isSavingName ||
+    isUploadingAvatar ||
+    isRemovingAvatar ||
+    isUploadingBanner ||
+    isRemovingBanner;
 
   useEffect(() => {
     setAvatarLoadError(false);
   }, [user.avatarUrl]);
+
+  useEffect(() => {
+    setBannerLoadError(false);
+  }, [user.bannerUrl]);
 
   useEffect(() => {
     if (open && !wasOpenRef.current) {
@@ -99,7 +126,7 @@ export function EditProfileModal({
     if (justResumedFromCrop) {
       const frame = window.requestAnimationFrame(() => {
         dialogRef.current
-          ?.querySelector<HTMLButtonElement>('[data-photo-trigger="true"]')
+          ?.querySelector<HTMLButtonElement>(lastCropSelectorRef.current)
           ?.focus();
       });
       return () => window.cancelAnimationFrame(frame);
@@ -270,7 +297,10 @@ export function EditProfileModal({
                   size="md"
                   loading={isUploadingAvatar}
                   disabled={isBusy || profileLoading}
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => {
+                    lastCropSelectorRef.current = '[data-photo-trigger="true"]';
+                    fileInputRef.current?.click();
+                  }}
                 >
                   {!isUploadingAvatar && (
                     <Camera className="h-4 w-4 text-[#0284C7]" aria-hidden="true" />
@@ -323,6 +353,118 @@ export function EditProfileModal({
                   type="button"
                   onClick={onDismissAvatarError}
                   aria-label="Fechar erro da foto"
+                  className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg hover:bg-red-200/50 transition-colors"
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+            )}
+          </section>
+
+          {/* Seção da capa do perfil */}
+          <section
+            aria-labelledby="edit-banner-heading"
+            className="space-y-3 rounded-xl border border-[#E2E8F0] bg-slate-50/60 p-4"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h3
+                id="edit-banner-heading"
+                className="text-sm font-bold text-[#0F172A]"
+              >
+                Capa do perfil
+              </h3>
+              <span className="text-[11px] font-medium text-[#475569]">
+                Salva imediatamente
+              </span>
+            </div>
+
+            <div className="w-full aspect-[3/1] overflow-hidden rounded-xl border border-[#E2E8F0] bg-gradient-to-r from-sky-100 via-sky-50 to-amber-50">
+              {user.bannerUrl && !bannerLoadError ? (
+                <img
+                  src={user.bannerUrl}
+                  alt={`Capa atual de ${user.name}`}
+                  onError={() => setBannerLoadError(true)}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-xs font-medium text-[#475569]">
+                  Capa padrão do Praiou?
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                ref={bannerInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={onSelectBannerFile}
+                disabled={isBusy || profileLoading}
+                className="sr-only"
+                aria-label="Selecionar arquivo de capa do perfil"
+              />
+
+              <Button
+                data-banner-trigger="true"
+                variant="secondary"
+                size="md"
+                loading={isUploadingBanner}
+                disabled={isBusy || profileLoading}
+                onClick={() => {
+                  lastCropSelectorRef.current = '[data-banner-trigger="true"]';
+                  bannerInputRef.current?.click();
+                }}
+              >
+                {!isUploadingBanner && (
+                  <ImageIcon className="h-4 w-4 text-[#0284C7]" aria-hidden="true" />
+                )}
+                {user.hasCustomBanner ? 'Alterar capa' : 'Adicionar capa'}
+              </Button>
+
+              {user.hasCustomBanner && (
+                <Button
+                  variant="ghost"
+                  size="md"
+                  loading={isRemovingBanner}
+                  disabled={isBusy || profileLoading}
+                  onClick={() => void onRemoveCustomBanner()}
+                  className="text-[#991B1B] hover:bg-[#FEE2E2]/60"
+                >
+                  {!isRemovingBanner && (
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  {isRemovingBanner ? 'Removendo...' : 'Remover capa'}
+                </Button>
+              )}
+            </div>
+
+            <p className="text-xs leading-relaxed text-[#475569]">
+              Capa visível publicamente no topo do seu perfil. Formatos aceitos: JPEG, PNG ou WebP (máx. 3 MB). Ao confirmar o recorte ou remover a capa, a alteração já é salva automaticamente.
+            </p>
+
+            {bannerSuccessMessage && !bannerActionError && (
+              <p
+                role="status"
+                className="flex items-center gap-1.5 text-xs font-semibold text-[#065F46]"
+              >
+                <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span>{bannerSuccessMessage}</span>
+              </p>
+            )}
+
+            {bannerActionError && (
+              <div
+                role="alert"
+                className="flex items-center justify-between gap-3 rounded-xl border border-[#EF4444]/30 bg-[#FEE2E2] px-3 py-2.5 text-xs font-medium text-[#991B1B]"
+              >
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span>{bannerActionError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={onDismissBannerError}
+                  aria-label="Fechar erro da capa"
                   className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg hover:bg-red-200/50 transition-colors"
                 >
                   <X className="h-4 w-4" aria-hidden="true" />

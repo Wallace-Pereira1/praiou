@@ -1,15 +1,25 @@
-import { AlertTriangle, ArrowLeft, Loader2, LogIn } from 'lucide-react';
-import { useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
-import { Button } from '../components/ui/Button';
+import { ArrowLeft, Loader2 } from 'lucide-react';
+import { Link, Navigate, useLocation, useSearchParams } from 'react-router-dom';
+import { AuthMethodsPanel } from '../components/auth/AuthMethodsPanel';
 import { Card } from '../components/ui/Card';
 import { useApp } from '../context/AppContext';
+import {
+  getPendingAuthReturnPath,
+  sanitizeInternalReturnPath,
+} from '../utils/authRedirect';
 
 export function LoginPage() {
-  const { user, authReady, signInWithGoogle } = useApp();
+  const { user, authReady } = useApp();
+  const [searchParams] = useSearchParams();
+  const location = useLocation();
 
-  const [isLoading, setIsLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const rawStateReturn = (location.state as { returnTo?: string } | null)?.returnTo;
+  const rawQueryReturn = searchParams.get('retorno');
+  const explicitReturn = rawQueryReturn ?? rawStateReturn;
+
+  const returnTo = explicitReturn
+    ? sanitizeInternalReturnPath(explicitReturn, '/perfil')
+    : getPendingAuthReturnPath('/perfil');
 
   if (!authReady) {
     return (
@@ -29,21 +39,8 @@ export function LoginPage() {
   }
 
   if (user) {
-    return <Navigate to="/perfil" replace />;
+    return <Navigate to={returnTo} replace />;
   }
-
-  const handleGoogleLogin = async () => {
-    setErrorMessage(null);
-    setIsLoading(true);
-    try {
-      await signInWithGoogle();
-    } catch {
-      setErrorMessage(
-        'Não foi possível iniciar o login com o Google agora. Tente novamente.'
-      );
-      setIsLoading(false);
-    }
-  };
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F8FAFC] text-[#0F172A] px-4 py-6">
@@ -68,30 +65,8 @@ export function LoginPage() {
             </p>
           </div>
 
-          <div className="mt-7 space-y-4">
-            {errorMessage && (
-              <div
-                role="alert"
-                className="flex items-start gap-2 rounded-xl border border-[#EF4444]/30 bg-[#FEE2E2] px-3.5 py-3 text-sm text-[#991B1B]"
-              >
-                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" aria-hidden="true" />
-                <span>{errorMessage}</span>
-              </div>
-            )}
-
-            <Button
-              variant="secondary"
-              size="lg"
-              fullWidth
-              loading={isLoading}
-              disabled={isLoading}
-              onClick={handleGoogleLogin}
-            >
-              {!isLoading && (
-                <LogIn className="h-4 w-4 text-[#0284C7]" aria-hidden="true" />
-              )}
-              {isLoading ? 'Redirecionando para o Google...' : 'Continuar com Google'}
-            </Button>
+          <div className="mt-7">
+            <AuthMethodsPanel returnTo={returnTo} fullWidth />
           </div>
         </Card>
       </div>

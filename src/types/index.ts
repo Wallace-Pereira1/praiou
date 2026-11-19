@@ -56,6 +56,7 @@ export interface UserProfile {
   externalAvatarUrl?: string;
   avatarPath?: string;
   bannerPath?: string;
+  bannerUrl?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -98,6 +99,8 @@ export interface AppUser {
   provider: 'google' | 'email';
   avatarUrl?: string;
   hasCustomAvatar?: boolean;
+  bannerUrl?: string;
+  hasCustomBanner?: boolean;
 }
 
 export type User = AppUser;

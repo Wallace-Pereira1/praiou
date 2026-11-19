@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Card } from '../components/ui/Card';
 import { useApp } from '../context/AppContext';
+import { consumePendingAuthReturnPath } from '../utils/authRedirect';
 
 type CallbackStatus = 'loading' | 'cancelled' | 'error';
 
@@ -54,8 +55,9 @@ export function AuthCallbackPage() {
       try {
         await exchangeOAuthCode(code);
         if (!active) return;
+        const destination = consumePendingAuthReturnPath('/perfil');
         window.history.replaceState(window.history.state, '', window.location.pathname);
-        navigate('/perfil', { replace: true });
+        navigate(destination, { replace: true });
       } catch {
         if (!active) return;
         setStatus('error');

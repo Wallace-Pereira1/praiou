@@ -1,6 +1,7 @@
 import { AlertTriangle, ArrowLeft, Camera, Loader2, LogIn } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { AuthMethodsPanel } from '../components/auth/AuthMethodsPanel';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -12,6 +13,7 @@ import * as reportsService from '../services/reports';
 export function NewReportPage() {
   const { beaches, user, authReady } = useApp();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
 
   const initialBeach = beaches.find((b) => b.slug === searchParams.get('praia'));
@@ -108,13 +110,9 @@ export function NewReportPage() {
             title="Entre para publicar seu relato"
             description="Os relatos são salvos na sua conta para ajudar outras pessoas a decidirem se deu praia."
             action={
-              <Link
-                to="/entrar"
-                className="min-h-[44px] inline-flex items-center justify-center gap-2 rounded-xl bg-[#0284C7] px-5 py-2.5 text-sm font-semibold text-white hover:bg-sky-700 transition-colors"
-              >
-                <LogIn className="h-4 w-4" aria-hidden="true" />
-                Entrar com Google
-              </Link>
+              <AuthMethodsPanel
+                returnTo={`${location.pathname}${location.search}`}
+              />
             }
           />
         ) : (
