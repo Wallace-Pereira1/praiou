@@ -141,6 +141,7 @@ export function AvatarCropModal({
   onSave,
 }: AvatarCropModalProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
   const loadedImageRef = useRef<HTMLImageElement | null>(null);
   const dragStateRef = useRef<{
     pointerId: number;
@@ -209,13 +210,41 @@ export function AvatarCropModal({
 
   useEffect(() => {
     if (!file) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      dialogRef.current?.focus();
+    });
+
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !saving) {
         onClose();
+        return;
+      }
+
+      if (e.key === 'Tab' && dialogRef.current) {
+        const focusable = Array.from(
+          dialogRef.current.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }
     };
+
     window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('keydown', handleKey);
+    };
   }, [file, saving, onClose]);
 
   const updateZoom = useCallback((nextZoom: number) => {
@@ -288,7 +317,7 @@ export function AvatarCropModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/50 backdrop-blur-[2px] p-4"
+      className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-slate-950/50 backdrop-blur-[2px] p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="avatar-crop-title"
@@ -298,7 +327,11 @@ export function AvatarCropModal({
         }
       }}
     >
-      <div className="w-full max-w-md rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-lg">
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="w-full max-w-md rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-lg focus:outline-none"
+      >
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2

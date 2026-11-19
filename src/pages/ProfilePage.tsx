@@ -1,13 +1,10 @@
 import {
   AlertTriangle,
-  Camera,
-  Check,
   Loader2,
   LogIn,
   LogOut,
   Pencil,
   Plus,
-  Trash2,
   User as UserIcon,
   X,
 } from 'lucide-react';
@@ -17,11 +14,11 @@ import {
   useRef,
   useState,
   type ChangeEvent,
-  type FormEvent,
 } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AppLayout } from '../components/layout/AppLayout';
 import { AvatarCropModal } from '../components/social/AvatarCropModal';
+import { EditProfileModal } from '../components/social/EditProfileModal';
 import { ReportCard } from '../components/social/ReportCard';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -49,20 +46,17 @@ export function ProfilePage() {
   } = useApp();
   const navigate = useNavigate();
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const editProfileButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const [avatarLoadError, setAvatarLoadError] = useState(false);
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [isRemovingAvatar, setIsRemovingAvatar] = useState(false);
   const [avatarActionError, setAvatarActionError] = useState<string | null>(null);
+  const [avatarSuccessMessage, setAvatarSuccessMessage] = useState<string | null>(null);
   const [cropError, setCropError] = useState<string | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-
-  const [isEditingName, setIsEditingName] = useState(false);
-  const [draftName, setDraftName] = useState('');
-  const [isSavingName, setIsSavingName] = useState(false);
-  const [nameError, setNameError] = useState<string | null>(null);
 
   const [userReports, setUserReports] = useState<BeachReport[]>([]);
   const [userReportsTotal, setUserReportsTotal] = useState(0);
@@ -149,33 +143,13 @@ export function ProfilePage() {
     void loadUserReports(user.id, 1, false);
   }, [authReady, user?.id, loadUserReports]);
 
-  const handleSaveName = async (e: FormEvent) => {
-    e.preventDefault();
-    const trimmed = draftName.trim();
-    if (trimmed.length < 2 || trimmed.length > 60) {
-      setNameError('Digite um nome entre 2 e 60 caracteres.');
-      return;
-    }
-
-    setNameError(null);
-    setIsSavingName(true);
-    try {
-      const updated = await updateProfileName(trimmed);
-      setUserReports((prev) =>
-        prev.map((r) =>
-          r.userId === updated.id ? { ...r, userName: updated.displayName } : r
-        )
-      );
-      setIsEditingName(false);
-    } catch (err) {
-      setNameError(
-        err instanceof Error
-          ? err.message
-          : 'Não foi possível salvar seu nome agora.'
-      );
-    } finally {
-      setIsSavingName(false);
-    }
+  const handleSaveName = async (displayName: string) => {
+    const updated = await updateProfileName(displayName);
+    setUserReports((prev) =>
+      prev.map((r) =>
+        r.userId === updated.id ? { ...r, userName: updated.displayName } : r
+      )
+    );
   };
 
   const handleConfirmDelete = async () => {
@@ -221,6 +195,7 @@ export function ProfilePage() {
     if (!selected || isUploadingAvatar || isRemovingAvatar) return;
 
     setAvatarActionError(null);
+    setAvatarSuccessMessage(null);
     setCropError(null);
 
     const validationError = validateAvatarFile(selected);
@@ -236,6 +211,7 @@ export function ProfilePage() {
     if (isUploadingAvatar || isRemovingAvatar) return;
     setCropError(null);
     setAvatarActionError(null);
+    setAvatarSuccessMessage(null);
     setIsUploadingAvatar(true);
 
     try {
@@ -246,6 +222,7 @@ export function ProfilePage() {
         )
       );
       setPendingAvatarFile(null);
+      setAvatarSuccessMessage('Foto de perfil atualizada.');
     } catch (err) {
       setCropError(
         err instanceof Error
@@ -260,6 +237,7 @@ export function ProfilePage() {
   const handleRemoveCustomAvatar = async () => {
     if (isUploadingAvatar || isRemovingAvatar || !user?.hasCustomAvatar) return;
     setAvatarActionError(null);
+    setAvatarSuccessMessage(null);
     setIsRemovingAvatar(true);
 
     try {
@@ -269,6 +247,7 @@ export function ProfilePage() {
           r.userId === updated.id ? { ...r, userAvatarUrl: updated.avatarUrl } : r
         )
       );
+      setAvatarSuccessMessage('Foto personalizada removida do perfil.');
     } catch (err) {
       setAvatarActionError(
         err instanceof Error
@@ -279,8 +258,6 @@ export function ProfilePage() {
       setIsRemovingAvatar(false);
     }
   };
-
-  const avatarBusy = isUploadingAvatar || isRemovingAvatar;
 
   return (
     <AppLayout>
@@ -354,68 +331,27 @@ export function ProfilePage() {
                 )}
 
                 <div className="min-w-0 flex-1">
-                  {!isEditingName ? (
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <h1 className="truncate font-display text-xl font-bold text-[#0F172A]">
-                        {user.name}
-                      </h1>
-                      {!profileError && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDraftName(user.name);
-                            setNameError(null);
-                            setIsEditingName(true);
-                          }}
-                          aria-label="Editar nome público"
-                          className="min-h-[44px] inline-flex items-center gap-1 rounded-xl px-2.5 text-xs font-semibold text-[#0284C7] hover:bg-sky-50 transition-colors"
-                        >
-                          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-                          Editar
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    <form onSubmit={handleSaveName} className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <input
-                          type="text"
-                          value={draftName}
-                          onChange={(e) => {
-                            setDraftName(e.target.value);
-                            setNameError(null);
-                          }}
-                          maxLength={60}
-                          aria-label="Nome de exibição público"
-                          className="min-h-[44px] rounded-xl border border-[#0284C7] bg-white px-3 text-sm font-semibold text-[#0F172A] focus:outline-none"
-                          autoFocus
-                        />
-                        <Button
-                          type="submit"
-                          size="md"
-                          loading={isSavingName}
-                          disabled={isSavingName}
-                        >
-                          {!isSavingName && <Check className="h-4 w-4" aria-hidden="true" />}
-                          {isSavingName ? 'Salvando...' : 'Salvar'}
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          size="md"
-                          disabled={isSavingName}
-                          onClick={() => {
-                            setIsEditingName(false);
-                            setNameError(null);
-                          }}
-                        >
-                          Cancelar
-                        </Button>
-                      </div>
-                      {nameError && (
-                        <p className="text-xs font-medium text-[#991B1B]">{nameError}</p>
-                      )}
-                    </form>
-                  )}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <h1 className="truncate font-display text-xl font-bold text-[#0F172A]">
+                      {user.name}
+                    </h1>
+                    {!profileError && (
+                      <button
+                        ref={editProfileButtonRef}
+                        type="button"
+                        onClick={() => {
+                          setAvatarActionError(null);
+                          setAvatarSuccessMessage(null);
+                          setIsEditProfileOpen(true);
+                        }}
+                        aria-label="Editar perfil"
+                        className="min-h-[44px] inline-flex items-center gap-1 rounded-xl px-2.5 text-xs font-semibold text-[#0284C7] hover:bg-sky-50 transition-colors"
+                      >
+                        <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                        Editar perfil
+                      </button>
+                    )}
+                  </div>
 
                   <p className="mt-0.5 truncate text-sm text-[#475569]">
                     {user.email ? `${user.email} · ` : ''}Conta Google
@@ -435,77 +371,6 @@ export function ProfilePage() {
                 {isLoggingOut ? 'Saindo...' : 'Sair'}
               </Button>
             </div>
-
-            {!profileError && (
-              <div className="mt-4 border-t border-slate-100 pt-4 space-y-2.5">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={handleSelectAvatarFile}
-                  disabled={avatarBusy || profileLoading}
-                  className="sr-only"
-                  aria-label="Selecionar arquivo de foto de perfil"
-                />
-
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      variant="secondary"
-                      size="md"
-                      loading={isUploadingAvatar}
-                      disabled={avatarBusy || profileLoading}
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      {!isUploadingAvatar && (
-                        <Camera className="h-4 w-4 text-[#0284C7]" aria-hidden="true" />
-                      )}
-                      {user.hasCustomAvatar ? 'Alterar foto' : 'Adicionar foto'}
-                    </Button>
-
-                    {user.hasCustomAvatar && (
-                      <Button
-                        variant="ghost"
-                        size="md"
-                        loading={isRemovingAvatar}
-                        disabled={avatarBusy || profileLoading}
-                        onClick={() => void handleRemoveCustomAvatar()}
-                        className="text-[#991B1B] hover:bg-[#FEE2E2]/60"
-                      >
-                        {!isRemovingAvatar && (
-                          <Trash2 className="h-4 w-4" aria-hidden="true" />
-                        )}
-                        {isRemovingAvatar ? 'Removendo...' : 'Remover foto'}
-                      </Button>
-                    )}
-                  </div>
-
-                  <p className="text-xs text-[#475569]">
-                    Foto visível publicamente · JPEG, PNG ou WebP (máx. 2 MB)
-                  </p>
-                </div>
-
-                {avatarActionError && (
-                  <div
-                    role="alert"
-                    className="flex items-center justify-between gap-3 rounded-xl border border-[#EF4444]/30 bg-[#FEE2E2] px-3.5 py-2.5 text-xs font-medium text-[#991B1B]"
-                  >
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
-                      <span>{avatarActionError}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setAvatarActionError(null)}
-                      aria-label="Fechar erro da foto"
-                      className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg hover:bg-red-200/50 transition-colors"
-                    >
-                      <X className="h-4 w-4" aria-hidden="true" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
 
             <div className="mt-5 grid grid-cols-2 gap-4 border-t border-slate-100 pt-4">
               <div>
@@ -633,6 +498,27 @@ export function ProfilePage() {
               </div>
             )}
           </section>
+
+          <EditProfileModal
+            open={isEditProfileOpen}
+            suspended={Boolean(pendingAvatarFile)}
+            user={user}
+            profileLoading={profileLoading}
+            isUploadingAvatar={isUploadingAvatar}
+            isRemovingAvatar={isRemovingAvatar}
+            avatarActionError={avatarActionError}
+            avatarSuccessMessage={avatarSuccessMessage}
+            returnFocusRef={editProfileButtonRef}
+            onDismissAvatarError={() => setAvatarActionError(null)}
+            onSelectAvatarFile={handleSelectAvatarFile}
+            onRemoveCustomAvatar={handleRemoveCustomAvatar}
+            onSaveName={handleSaveName}
+            onClose={() => {
+              setIsEditProfileOpen(false);
+              setAvatarActionError(null);
+              setAvatarSuccessMessage(null);
+            }}
+          />
 
           <AvatarCropModal
             file={pendingAvatarFile}
