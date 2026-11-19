@@ -116,7 +116,7 @@ function mapSupabaseSnapshot(row: SupabaseSnapshotRow): BeachSnapshot {
     id: row.id,
     beachId: row.beach_id,
     status: normalizeStatus(row.status),
-    score: Number(row.score),
+    score: toNumberOrNull(row.score),
     summaryReason: row.summary_reason ?? 'Condições registradas para esta praia',
     reasons: reasons.slice(0, 3),
     condition: normalizeCondition(row.condition),
@@ -134,6 +134,7 @@ function mapSupabaseSnapshot(row: SupabaseSnapshotRow): BeachSnapshot {
     hourlyForecast,
     sourceStatus: normalizeSourceStatus(row.source_status),
     updatedAtLabel: formatFetchedTimeBRT(row.fetched_at),
+    fetchedAt: row.fetched_at,
   };
 }
 

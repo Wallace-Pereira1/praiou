@@ -318,5 +318,6 @@ export async function fetchLiveConditionsForBeach(
         : (fallbackSnapshot?.hourlyForecast ?? []),
     sourceStatus,
     updatedAtLabel: formatNowHHMM(),
+    fetchedAt: new Date().toISOString(),
   };
 }

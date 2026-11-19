@@ -106,15 +106,15 @@ export function AppLayout({ children }: AppLayoutProps) {
         </div>
       </header>
 
-      {/* Conteúdo principal com respiro inferior para a bottom nav no mobile */}
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-4 pb-24 sm:px-6 md:pt-7 md:pb-12">
+      {/* Conteúdo principal com respiro inferior para a bottom nav e safe area no mobile */}
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] sm:px-6 md:pt-7 md:pb-12">
         {children}
       </main>
 
       {/* Bottom Navigation fixa no mobile */}
       <nav
         aria-label="Navegação inferior"
-        className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-[#E2E8F0] bg-white/95 backdrop-blur-md"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-[#E2E8F0] bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md"
       >
         <div className="mx-auto grid h-16 max-w-md grid-cols-4 items-center px-2">
           <NavLink

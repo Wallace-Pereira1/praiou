@@ -48,9 +48,9 @@ export function ReportCard({
       }
     >
       <article>
-        {/* Cabeçalho do relato: autor, praia, tempo e nota */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
+        {/* Cabeçalho do relato: no mobile coloca avaliação em sóis em linha própria; preserva desktop */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+          <div className="flex items-start gap-3 min-w-0 flex-1">
             {report.userAvatarUrl && !avatarError ? (
               <img
                 src={report.userAvatarUrl}
@@ -65,42 +65,48 @@ export function ReportCard({
               </div>
             )}
 
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="truncate text-sm font-bold text-[#0F172A]">
+                <p className="break-words sm:truncate text-sm font-bold text-[#0F172A]">
                   {report.userName}
                 </p>
                 {highlighted && <Badge tone="ocean">Publicado agora</Badge>}
               </div>
-              <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-[#475569]">
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-[#475569]">
                 {showBeachLink ? (
                   <Link
                     to={`/praia/${report.beachSlug}`}
-                    className="inline-flex items-center gap-1 font-semibold text-[#0284C7] hover:underline"
+                    className="inline-flex items-center gap-1 font-semibold text-[#0284C7] hover:underline break-words"
                   >
                     <MapPin className="h-3 w-3 shrink-0" aria-hidden="true" />
-                    {report.beachName}
+                    <span>{report.beachName}</span>
                   </Link>
                 ) : (
-                  <span className="font-semibold text-[#0F172A]">{report.beachName}</span>
+                  <span className="font-semibold text-[#0F172A] break-words">
+                    {report.beachName}
+                  </span>
                 )}
                 <span aria-hidden="true">·</span>
-                <span className="tabular-nums">{formatRelativeTime(report.createdAt)}</span>
+                <span className="tabular-nums whitespace-nowrap">
+                  {formatRelativeTime(report.createdAt)}
+                </span>
               </div>
             </div>
           </div>
 
-          <SunRatingDisplay rating={report.rating} />
+          <div className="pl-[52px] sm:pl-0 sm:pt-0.5 shrink-0">
+            <SunRatingDisplay rating={report.rating} />
+          </div>
         </div>
 
         {/* Comentário do usuário */}
         {report.comment && (
-          <p className="mt-3.5 text-sm sm:text-[15px] leading-relaxed text-[#0F172A]">
+          <p className="mt-3.5 break-words text-sm sm:text-[15px] leading-relaxed text-[#0F172A]">
             {report.comment}
           </p>
         )}
 
-        {/* Foto opcional do relato (mantém proporção natural sem placeholder vazio) */}
+        {/* Foto opcional do relato: miniatura 4:3 centralizada; modal exibe foto completa sem cortes */}
         {report.photoUrl && (
           <div className="mt-3.5">
             {photoError ? (
@@ -114,17 +120,21 @@ export function ReportCard({
                 type="button"
                 onClick={() => setIsPhotoViewerOpen(true)}
                 aria-label={`Ampliar foto do relato de ${report.userName} em ${report.beachName}`}
-                className="group relative block w-full overflow-hidden rounded-xl border border-[#E2E8F0] bg-slate-50 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0284C7]"
+                className="group relative block aspect-[4/3] w-full overflow-hidden rounded-xl border border-[#E2E8F0] bg-slate-100 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0284C7]"
               >
                 <img
                   src={report.photoUrl}
                   alt={photoAlt}
                   loading="lazy"
                   onError={() => setPhotoError(true)}
-                  className="mx-auto block max-h-72 w-full object-contain transition-transform duration-200 group-hover:scale-[1.01]"
+                  className="h-full w-full object-cover object-center transition-transform duration-200 group-hover:scale-[1.01]"
                 />
-                <span className="pointer-events-none absolute right-2.5 bottom-2.5 inline-flex items-center gap-1 rounded-lg bg-slate-900/75 px-2.5 py-1 text-[11px] font-semibold text-white">
-                  <Maximize2 className="h-3 w-3" aria-hidden="true" />
+                <span
+                  className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-slate-950/45 to-transparent"
+                  aria-hidden="true"
+                />
+                <span className="pointer-events-none absolute right-2.5 bottom-2.5 inline-flex items-center gap-1.5 rounded-lg border border-white/20 bg-slate-950/80 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm backdrop-blur-xs">
+                  <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />
                   Ampliar
                 </span>
               </button>

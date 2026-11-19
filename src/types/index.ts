@@ -29,7 +29,7 @@ export interface BeachSnapshot {
   id: string;
   beachId: string;
   status: PraiouStatus;
-  score: number; // 0 a 100
+  score: number | null; // 0 a 100 (null quando ausente)
   summaryReason: string;
   reasons: string[]; // Até 3 motivos curtos
   condition: WeatherConditionType;
@@ -47,6 +47,7 @@ export interface BeachSnapshot {
   hourlyForecast: HourlyForecastPoint[];
   sourceStatus: SnapshotSourceStatus;
   updatedAtLabel: string; // Ex.: "13:45"
+  fetchedAt?: string; // ISO timestamp da leitura para checagem de atualidade
 }
 
 export interface UserProfile {

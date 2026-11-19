@@ -30,6 +30,7 @@ import { WeatherIcon } from '../components/ui/WeatherIcon';
 import { useApp } from '../context/AppContext';
 import * as reportsService from '../services/reports';
 import type { BeachReport } from '../types';
+import { isRioNighttime } from '../utils/beachRanking';
 import { formatCompassDirection } from '../utils/formatters';
 
 export function BeachDetailPage() {
@@ -327,7 +328,7 @@ export function BeachDetailPage() {
                   <StatusBadge status={snapshot.status} size="lg" />
                   <div className="flex items-center gap-2 text-xs text-[#475569] tabular-nums">
                     <span className="font-semibold text-[#0F172A]">
-                      Índice {snapshot.score}/100
+                      {snapshot.score !== null ? `Índice ${snapshot.score}/100` : 'Índice —'}
                     </span>
                     <span aria-hidden="true">·</span>
                     <span className="inline-flex items-center gap-1">
@@ -368,7 +369,11 @@ export function BeachDetailPage() {
                   <h2 className="font-display text-base font-bold text-[#0F172A]">
                     Clima agora
                   </h2>
-                  <WeatherIcon condition={snapshot.condition} className="h-5 w-5" />
+                  <WeatherIcon
+                    condition={snapshot.condition}
+                    isNight={isRioNighttime()}
+                    className="h-5 w-5"
+                  />
                 </div>
 
                 <div className="mt-4 grid grid-cols-2 gap-4">
