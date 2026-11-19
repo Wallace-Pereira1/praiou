@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { SafetyNotice } from '../components/layout/SafetyNotice';
 import { ReportCard } from '../components/social/ReportCard';
 import { Button } from '../components/ui/Button';
@@ -28,6 +28,7 @@ import { Skeleton } from '../components/ui/Skeleton';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { WeatherIcon } from '../components/ui/WeatherIcon';
 import { useApp } from '../context/AppContext';
+import { useReportHelpfulActions } from '../hooks/useReportHelpfulActions';
 import * as reportsService from '../services/reports';
 import type { BeachReport } from '../types';
 import { isRioNighttime } from '../utils/beachRanking';
@@ -36,11 +37,13 @@ import { formatCompassDirection } from '../utils/formatters';
 export function BeachDetailPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const {
     beaches,
     getSnapshotByBeachId,
     user,
+    authReady,
     isInitialLoading,
     loadError,
     refreshData,
@@ -139,6 +142,7 @@ export function BeachDetailPage() {
   );
 
   useEffect(() => {
+    if (!authReady) return;
     if (!beach?.id || devState === 'vazio') {
       loadRequestIdRef.current += 1;
       setBeachReports([]);
@@ -149,7 +153,15 @@ export function BeachDetailPage() {
     }
 
     void loadBeachReports(beach.id, 1, false);
-  }, [beach?.id, devState, loadBeachReports]);
+  }, [authReady, beach?.id, devState, loadBeachReports]);
+
+  const helpfulActions = useReportHelpfulActions({
+    userId: user?.id ?? null,
+    authReady,
+    items: beachReports,
+    setItems: setBeachReports,
+    returnTo: `${location.pathname}${location.search}`,
+  });
 
   const handleRetry = async () => {
     if (devState) {
@@ -616,11 +628,33 @@ export function BeachDetailPage() {
                 />
               ) : (
                 <div className="space-y-3.5">
+                  {helpfulActions.hasHelpfulLoadError && (
+                    <div
+                      role="alert"
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#F59E0B]/40 bg-[#FEF3C7] px-3.5 py-2.5 text-xs sm:text-sm font-medium text-[#92400E]"
+                    >
+                      <span>Não foi possível carregar as contagens de “Foi útil” agora.</span>
+                      <Button
+                        variant="secondary"
+                        size="md"
+                        loading={helpfulActions.isRetryingHelpful}
+                        onClick={() => void helpfulActions.retryHelpfulSummaries()}
+                      >
+                        Tentar novamente
+                      </Button>
+                    </div>
+                  )}
+
                   {beachReports.map((report) => (
                     <ReportCard
                       key={report.id}
                       report={report}
                       showBeachLink={false}
+                      currentUserId={user?.id ?? null}
+                      isHelpfulPending={helpfulActions.pendingHelpfulIds.has(report.id)}
+                      helpfulError={helpfulActions.helpfulErrorById[report.id] ?? null}
+                      onToggleHelpful={helpfulActions.handleToggleHelpful}
+                      onDismissHelpfulError={helpfulActions.dismissHelpfulError}
                       onDeleteRequest={
                         user?.id === report.userId
                           ? (id) => setReportPendingDelete(id)

@@ -76,6 +76,9 @@ export interface BeachReport {
   photoUrl?: string;
   photoAlt?: string;
   createdAt: string;
+  helpfulCount?: number | null;
+  viewerHasReacted?: boolean;
+  helpfulLoadError?: boolean;
   flagsCount?: number;
 }
 

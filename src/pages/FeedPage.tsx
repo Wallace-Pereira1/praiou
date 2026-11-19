@@ -10,6 +10,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorState } from '../components/ui/ErrorState';
 import { Skeleton } from '../components/ui/Skeleton';
 import { useApp } from '../context/AppContext';
+import { useReportHelpfulActions } from '../hooks/useReportHelpfulActions';
 import * as reportsService from '../services/reports';
 import type { BeachReport } from '../types';
 
@@ -19,7 +20,7 @@ interface FeedLocationState {
 }
 
 export function FeedPage() {
-  const { beaches, user } = useApp();
+  const { beaches, user, authReady } = useApp();
   const location = useLocation();
   const state = location.state as FeedLocationState | null;
 
@@ -146,8 +147,17 @@ export function FeedPage() {
   );
 
   useEffect(() => {
+    if (!authReady) return;
     void loadReportsPage(1, selectedBeachId, false);
-  }, [selectedBeachId, loadReportsPage]);
+  }, [authReady, selectedBeachId, loadReportsPage]);
+
+  const helpfulActions = useReportHelpfulActions({
+    userId: user?.id ?? null,
+    authReady,
+    items,
+    setItems,
+    returnTo: `${location.pathname}${location.search}`,
+  });
 
   const handleLoadMore = () => {
     if (isLoadingMore || !hasMore) return;
@@ -333,6 +343,23 @@ export function FeedPage() {
           />
         ) : (
           <div className="space-y-4">
+            {helpfulActions.hasHelpfulLoadError && (
+              <div
+                role="alert"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#F59E0B]/40 bg-[#FEF3C7] px-3.5 py-2.5 text-xs sm:text-sm font-medium text-[#92400E]"
+              >
+                <span>Não foi possível carregar as contagens de “Foi útil” agora.</span>
+                <Button
+                  variant="secondary"
+                  size="md"
+                  loading={helpfulActions.isRetryingHelpful}
+                  onClick={() => void helpfulActions.retryHelpfulSummaries()}
+                >
+                  Tentar novamente
+                </Button>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {items.map((report) => (
                 <ReportCard
@@ -340,6 +367,11 @@ export function FeedPage() {
                   report={report}
                   showBeachLink
                   highlighted={report.id === highlightedId}
+                  currentUserId={user?.id ?? null}
+                  isHelpfulPending={helpfulActions.pendingHelpfulIds.has(report.id)}
+                  helpfulError={helpfulActions.helpfulErrorById[report.id] ?? null}
+                  onToggleHelpful={helpfulActions.handleToggleHelpful}
+                  onDismissHelpfulError={helpfulActions.dismissHelpfulError}
                   onDeleteRequest={
                     user?.id === report.userId
                       ? (id) => setReportPendingDelete(id)

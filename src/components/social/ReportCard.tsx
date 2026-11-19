@@ -1,4 +1,13 @@
-import { ImageOff, MapPin, Maximize2, Trash2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  Check,
+  ImageOff,
+  Loader2,
+  MapPin,
+  Maximize2,
+  ThumbsUp,
+  Trash2,
+} from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { BeachReport } from '../../types';
@@ -12,6 +21,11 @@ interface ReportCardProps {
   report: BeachReport;
   showBeachLink?: boolean;
   highlighted?: boolean;
+  currentUserId?: string | null;
+  isHelpfulPending?: boolean;
+  helpfulError?: string | null;
+  onToggleHelpful?: (report: BeachReport) => void;
+  onDismissHelpfulError?: (reportId: string) => void;
   onDeleteRequest?: (reportId: string) => void;
 }
 
@@ -19,6 +33,11 @@ export function ReportCard({
   report,
   showBeachLink = true,
   highlighted = false,
+  currentUserId = null,
+  isHelpfulPending = false,
+  helpfulError = null,
+  onToggleHelpful,
+  onDismissHelpfulError,
   onDeleteRequest,
 }: ReportCardProps) {
   const [avatarError, setAvatarError] = useState(false);
@@ -37,6 +56,23 @@ export function ReportCard({
 
   const photoAlt =
     report.photoAlt ?? `Foto enviada no relato sobre ${report.beachName}`;
+
+  const isOwnReport = Boolean(currentUserId && currentUserId === report.userId);
+  const isReacted = Boolean(currentUserId && report.viewerHasReacted);
+  const hasKnownHelpfulCount =
+    typeof report.helpfulCount === 'number' && !report.helpfulLoadError;
+  const helpfulCountLabel = hasKnownHelpfulCount ? String(report.helpfulCount) : '—';
+  const helpfulCountAccessible = hasKnownHelpfulCount
+    ? report.helpfulCount === 1
+      ? '1 pessoa marcou como útil'
+      : `${report.helpfulCount} pessoas marcaram como útil`
+    : 'Contagem de utilidade indisponível no momento';
+
+  const helpfulAriaLabel = !currentUserId
+    ? `Entrar com Google para marcar o relato de ${report.userName} como "Foi útil". ${helpfulCountAccessible}.`
+    : isReacted
+      ? `Remover marcação "Foi útil" do relato de ${report.userName}. ${helpfulCountAccessible}.`
+      : `Marcar relato de ${report.userName} como "Foi útil". ${helpfulCountAccessible}.`;
 
   return (
     <Card
@@ -142,9 +178,61 @@ export function ReportCard({
           </div>
         )}
 
-        {/* Exclusão disponível apenas para o autor (passada pela tela pai) */}
-        {onDeleteRequest && (
-          <div className="mt-2.5 flex items-center justify-end gap-1 border-t border-slate-100 pt-1.5">
+        {/* Rodapé do cartão: reação "Foi útil" (ou total no próprio relato) + Excluir (somente autor) */}
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2">
+          {isOwnReport ? (
+            <div
+              aria-label={`Seu relato: ${helpfulCountAccessible}.`}
+              className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl border border-[#E2E8F0] bg-slate-50 px-3 text-xs font-medium text-[#475569]"
+            >
+              <ThumbsUp className="h-3.5 w-3.5 text-[#64748B]" aria-hidden="true" />
+              <span>Foi útil</span>
+              <span
+                className="rounded-md bg-white px-1.5 py-0.5 text-[11px] font-bold text-[#0F172A] tabular-nums border border-slate-200/80"
+                aria-hidden="true"
+              >
+                {helpfulCountLabel}
+              </span>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={isHelpfulPending || !onToggleHelpful}
+              aria-pressed={isReacted}
+              aria-label={helpfulAriaLabel}
+              onClick={() => onToggleHelpful?.(report)}
+              className={`min-h-[44px] inline-flex items-center gap-1.5 rounded-xl px-3.5 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-[#0284C7] disabled:opacity-65 ${
+                isReacted
+                  ? 'border-2 border-[#0284C7] bg-sky-50 font-bold text-[#0284C7]'
+                  : 'border border-[#E2E8F0] bg-white font-semibold text-[#475569] hover:border-[#0284C7]/50 hover:text-[#0F172A]'
+              }`}
+            >
+              {isHelpfulPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-[#0284C7]" aria-hidden="true" />
+              ) : (
+                <ThumbsUp
+                  className={`h-3.5 w-3.5 ${isReacted ? 'fill-current' : ''}`}
+                  aria-hidden="true"
+                />
+              )}
+              <span>Foi útil</span>
+              {isReacted && !isHelpfulPending && (
+                <Check className="h-3 w-3 stroke-[2.75]" aria-hidden="true" />
+              )}
+              <span
+                className={`ml-0.5 rounded-md px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${
+                  isReacted
+                    ? 'bg-[#0284C7] text-white'
+                    : 'bg-slate-100 text-[#0F172A]'
+                }`}
+                aria-hidden="true"
+              >
+                {helpfulCountLabel}
+              </span>
+            </button>
+          )}
+
+          {onDeleteRequest && (
             <button
               type="button"
               onClick={() => onDeleteRequest(report.id)}
@@ -153,6 +241,27 @@ export function ReportCard({
               <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
               Excluir
             </button>
+          )}
+        </div>
+
+        {helpfulError && (
+          <div
+            role="alert"
+            className="mt-2 flex items-center justify-between gap-2 rounded-xl border border-[#EF4444]/30 bg-[#FEE2E2] px-3 py-2 text-xs font-medium text-[#991B1B]"
+          >
+            <div className="flex items-center gap-1.5 min-w-0">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>{helpfulError}</span>
+            </div>
+            {onDismissHelpfulError && (
+              <button
+                type="button"
+                onClick={() => onDismissHelpfulError(report.id)}
+                className="shrink-0 font-bold underline"
+              >
+                Fechar
+              </button>
+            )}
           </div>
         )}
       </article>

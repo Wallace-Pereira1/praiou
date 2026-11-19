@@ -14,6 +14,23 @@ import {
 import { resolveProfileAvatarUrl } from './profiles';
 
 export const DEFAULT_REPORTS_PAGE_SIZE = 20;
+const MAX_HELPFUL_SUMMARY_BATCH = 50;
+
+export interface HelpfulReactionSummary {
+  reportId: string;
+  helpfulCount: number;
+  viewerHasReacted: boolean;
+}
+
+export class HelpfulReactionMutationError extends Error {
+  readonly reconciled?: HelpfulReactionSummary;
+
+  constructor(message: string, reconciled?: HelpfulReactionSummary) {
+    super(message);
+    this.name = 'HelpfulReactionMutationError';
+    this.reconciled = reconciled;
+  }
+}
 
 export type ReportSubmissionStage =
   | 'preparing'
@@ -69,6 +86,12 @@ interface SupabaseBeachReportRow extends BaseBeachReportRow {
   beaches?: JoinedBeachRow | JoinedBeachRow[] | null;
 }
 
+interface HelpfulSummaryRpcRow {
+  report_id: string;
+  helpful_count: number | string | null;
+  viewer_has_reacted: boolean | null;
+}
+
 const BASE_REPORT_SELECT =
   'id, beach_id, user_id, rating, comment, photo_path, created_at';
 
@@ -120,7 +143,9 @@ function normalizeRating(raw: number): 1 | 2 | 3 | 4 | 5 {
 
 function mapSupabaseReport(
   row: SupabaseBeachReportRow,
-  fallbackDisplay?: CreateReportFallbackDisplay
+  fallbackDisplay?: CreateReportFallbackDisplay,
+  helpfulSummary?: HelpfulReactionSummary,
+  helpfulLoadError = false
 ): BeachReport {
   const profile = unwrapRelation(row.profiles);
   const beach = unwrapRelation(row.beaches);
@@ -147,7 +172,178 @@ function mapSupabaseReport(
     photoUrl,
     photoAlt: photoUrl ? `Foto enviada no relato sobre ${beachName}` : undefined,
     createdAt: row.created_at,
+    helpfulCount: helpfulLoadError ? null : (helpfulSummary?.helpfulCount ?? 0),
+    viewerHasReacted: helpfulLoadError
+      ? false
+      : (helpfulSummary?.viewerHasReacted ?? false),
+    helpfulLoadError,
   };
+}
+
+export async function getReportHelpfulSummaries(
+  reportIds: string[]
+): Promise<Map<string, HelpfulReactionSummary>> {
+  const map = new Map<string, HelpfulReactionSummary>();
+  const uniqueIds = Array.from(
+    new Set(reportIds.map((id) => id.trim()).filter(Boolean))
+  );
+
+  if (uniqueIds.length === 0) {
+    return map;
+  }
+
+  if (!supabase) {
+    throw new Error('Conexão com o Supabase não configurada.');
+  }
+
+  for (let i = 0; i < uniqueIds.length; i += MAX_HELPFUL_SUMMARY_BATCH) {
+    const batch = uniqueIds.slice(i, i + MAX_HELPFUL_SUMMARY_BATCH);
+    const { data, error } = await supabase.rpc('get_beach_report_helpful_summary', {
+      p_report_ids: batch,
+    });
+
+    if (error || !Array.isArray(data)) {
+      throw new Error('Não foi possível carregar as marcações de "Foi útil" agora.');
+    }
+
+    for (const rawRow of data as HelpfulSummaryRpcRow[]) {
+      if (!rawRow?.report_id) continue;
+      const numericCount = Number(rawRow.helpful_count ?? 0);
+      map.set(rawRow.report_id, {
+        reportId: rawRow.report_id,
+        helpfulCount: Number.isFinite(numericCount)
+          ? Math.max(0, Math.round(numericCount))
+          : 0,
+        viewerHasReacted: Boolean(rawRow.viewer_has_reacted),
+      });
+    }
+  }
+
+  return map;
+}
+
+async function tryGetSingleHelpfulSummary(
+  reportId: string
+): Promise<HelpfulReactionSummary | undefined> {
+  try {
+    const map = await getReportHelpfulSummaries([reportId]);
+    return map.get(reportId);
+  } catch {
+    return undefined;
+  }
+}
+
+export async function markReportHelpful(
+  reportId: string
+): Promise<HelpfulReactionSummary> {
+  if (!supabase) {
+    throw new HelpfulReactionMutationError('Conexão com o Supabase não configurada.');
+  }
+
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  const sessionUser = sessionData.session?.user;
+
+  if (sessionError || !sessionUser) {
+    throw new HelpfulReactionMutationError(
+      'Entre com sua conta Google para marcar um relato como útil.'
+    );
+  }
+
+  const { error: insertError } = await supabase
+    .from('beach_report_helpful_reactions')
+    .insert({
+      report_id: reportId,
+      user_id: sessionUser.id,
+    });
+
+  // 23505 = chave única já existente -> trata repetição de forma idempotente
+  if (insertError && insertError.code !== '23505') {
+    const reconciled = await tryGetSingleHelpfulSummary(reportId);
+
+    if (insertError.code === '42501') {
+      throw new HelpfulReactionMutationError(
+        'Não é possível marcar o próprio relato como útil.',
+        reconciled
+      );
+    }
+
+    if (reconciled?.viewerHasReacted) {
+      return reconciled;
+    }
+
+    throw new HelpfulReactionMutationError(
+      'Não foi possível marcar o relato como útil agora. Tente novamente.',
+      reconciled
+    );
+  }
+
+  try {
+    const map = await getReportHelpfulSummaries([reportId]);
+    const confirmed = map.get(reportId);
+    if (!confirmed) {
+      throw new HelpfulReactionMutationError('Relato não encontrado para confirmar a reação.');
+    }
+    return confirmed;
+  } catch (err) {
+    if (err instanceof HelpfulReactionMutationError) {
+      throw err;
+    }
+    throw new HelpfulReactionMutationError(
+      'A marcação foi enviada, mas não foi possível confirmar o contador agora. Tente atualizar.'
+    );
+  }
+}
+
+export async function unmarkReportHelpful(
+  reportId: string
+): Promise<HelpfulReactionSummary> {
+  if (!supabase) {
+    throw new HelpfulReactionMutationError('Conexão com o Supabase não configurada.');
+  }
+
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  const sessionUser = sessionData.session?.user;
+
+  if (sessionError || !sessionUser) {
+    throw new HelpfulReactionMutationError(
+      'Entre com sua conta Google para remover sua marcação.'
+    );
+  }
+
+  const { error: deleteError } = await supabase
+    .from('beach_report_helpful_reactions')
+    .delete()
+    .eq('report_id', reportId)
+    .eq('user_id', sessionUser.id);
+
+  if (deleteError) {
+    const reconciled = await tryGetSingleHelpfulSummary(reportId);
+
+    if (reconciled && !reconciled.viewerHasReacted) {
+      return reconciled;
+    }
+
+    throw new HelpfulReactionMutationError(
+      'Não foi possível remover sua marcação agora. Tente novamente.',
+      reconciled
+    );
+  }
+
+  try {
+    const map = await getReportHelpfulSummaries([reportId]);
+    const confirmed = map.get(reportId);
+    if (!confirmed) {
+      throw new HelpfulReactionMutationError('Relato não encontrado para confirmar a remoção.');
+    }
+    return confirmed;
+  } catch (err) {
+    if (err instanceof HelpfulReactionMutationError) {
+      throw err;
+    }
+    throw new HelpfulReactionMutationError(
+      'A remoção foi enviada, mas não foi possível confirmar o contador agora. Tente atualizar.'
+    );
+  }
 }
 
 interface FetchReportsOptions {
@@ -194,7 +390,27 @@ async function fetchPaginatedReports(
   }
 
   const rows = (data ?? []) as SupabaseBeachReportRow[];
-  const items = rows.map((row) => mapSupabaseReport(row));
+  const reportIds = rows.map((row) => row.id);
+
+  let helpfulMap = new Map<string, HelpfulReactionSummary>();
+  let helpfulLoadError = false;
+
+  if (reportIds.length > 0) {
+    try {
+      helpfulMap = await getReportHelpfulSummaries(reportIds);
+    } catch {
+      helpfulLoadError = true;
+    }
+  }
+
+  const items = rows.map((row) =>
+    mapSupabaseReport(
+      row,
+      undefined,
+      helpfulMap.get(row.id),
+      helpfulLoadError
+    )
+  );
   const totalCount = typeof count === 'number' ? count : items.length;
 
   return {
@@ -300,6 +516,12 @@ async function enrichReportForDisplay(
   baseRow: BaseBeachReportRow,
   fallbackDisplay?: CreateReportFallbackDisplay
 ): Promise<BeachReport> {
+  const initialSummary: HelpfulReactionSummary = {
+    reportId: baseRow.id,
+    helpfulCount: 0,
+    viewerHasReacted: false,
+  };
+
   if (supabase) {
     try {
       const { data, error } = await supabase
@@ -309,7 +531,12 @@ async function enrichReportForDisplay(
         .single();
 
       if (!error && data) {
-        return mapSupabaseReport(data as SupabaseBeachReportRow, fallbackDisplay);
+        return mapSupabaseReport(
+          data as SupabaseBeachReportRow,
+          fallbackDisplay,
+          initialSummary,
+          false
+        );
       }
     } catch {
       // Se a consulta secundária de exibição falhar, o relato já foi gravado e
@@ -317,7 +544,7 @@ async function enrichReportForDisplay(
     }
   }
 
-  return mapSupabaseReport(baseRow, fallbackDisplay);
+  return mapSupabaseReport(baseRow, fallbackDisplay, initialSummary, false);
 }
 
 export async function createReport(
