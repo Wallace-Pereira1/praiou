@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckCircle2, Plus, Star, X } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { AppLayout } from '../components/layout/AppLayout';
 import { ReportCard } from '../components/social/ReportCard';
@@ -27,8 +27,12 @@ export function FeedPage() {
   const [highlightedId, setHighlightedId] = useState<string | null>(
     state?.newReportId ?? null
   );
-  const [confirmedCreatedReport, setConfirmedCreatedReport] =
-    useState<BeachReport | null>(state?.createdReport ?? null);
+  const confirmedCreatedReportRef = useRef<BeachReport | null>(
+    state?.createdReport ?? null
+  );
+  const loadRequestIdRef = useRef(0);
+  const deleteEpochRef = useRef(0);
+  const deletedReportIdsRef = useRef<Set<string>>(new Set());
 
   const [items, setItems] = useState<BeachReport[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -45,13 +49,23 @@ export function FeedPage() {
       setHighlightedId(state.newReportId);
       setSelectedBeachId('all');
     }
-    if (state?.createdReport) {
-      setConfirmedCreatedReport(state.createdReport);
+    if (
+      state?.createdReport &&
+      !deletedReportIdsRef.current.has(state.createdReport.id)
+    ) {
+      confirmedCreatedReportRef.current = state.createdReport;
+      setItems((prev) => {
+        if (prev.some((r) => r.id === state.createdReport!.id)) return prev;
+        return [state.createdReport!, ...prev];
+      });
     }
   }, [state?.createdReport, state?.newReportId]);
 
   const loadReportsPage = useCallback(
     async (targetPage: number, beachFilter: string, append: boolean) => {
+      const requestId = ++loadRequestIdRef.current;
+      const startDeleteEpoch = deleteEpochRef.current;
+
       if (append) {
         setIsLoadingMore(true);
       } else {
@@ -66,33 +80,51 @@ export function FeedPage() {
           beachId: beachFilter === 'all' ? undefined : beachFilter,
         });
 
+        if (requestId !== loadRequestIdRef.current) {
+          return;
+        }
+
+        const filteredItems = result.items.filter(
+          (r) => !deletedReportIdsRef.current.has(r.id)
+        );
+        const deletedDuringFetch = startDeleteEpoch !== deleteEpochRef.current;
+
         setPage(result.page);
         setHasMore(result.hasMore);
 
         if (append) {
           setItems((prev) => {
             const seen = new Set(prev.map((r) => r.id));
-            const next = result.items.filter((r) => !seen.has(r.id));
+            const next = filteredItems.filter((r) => !seen.has(r.id));
             return [...prev, ...next];
           });
-          setTotalCount(result.totalCount);
+          if (!deletedDuringFetch) {
+            setTotalCount(result.totalCount);
+          }
         } else {
-          let nextItems = result.items;
+          let nextItems = filteredItems;
           let nextTotal = result.totalCount;
 
+          const createdReport = confirmedCreatedReportRef.current;
           if (
             beachFilter === 'all' &&
-            confirmedCreatedReport &&
-            !nextItems.some((r) => r.id === confirmedCreatedReport.id)
+            createdReport &&
+            !deletedReportIdsRef.current.has(createdReport.id) &&
+            !nextItems.some((r) => r.id === createdReport.id)
           ) {
-            nextItems = [confirmedCreatedReport, ...nextItems];
+            nextItems = [createdReport, ...nextItems];
             nextTotal = Math.max(nextTotal, nextItems.length);
           }
 
           setItems(nextItems);
-          setTotalCount(nextTotal);
+          if (!deletedDuringFetch) {
+            setTotalCount(nextTotal);
+          }
         }
       } catch (err) {
+        if (requestId !== loadRequestIdRef.current) {
+          return;
+        }
         if (!append) {
           setItems([]);
           setTotalCount(0);
@@ -104,11 +136,13 @@ export function FeedPage() {
             : 'Houve uma instabilidade temporária ao buscar os relatos da comunidade.'
         );
       } finally {
-        setIsLoading(false);
-        setIsLoadingMore(false);
+        if (requestId === loadRequestIdRef.current) {
+          setIsLoading(false);
+          setIsLoadingMore(false);
+        }
       }
     },
-    [confirmedCreatedReport]
+    []
   );
 
   useEffect(() => {
@@ -128,11 +162,15 @@ export function FeedPage() {
 
     try {
       await reportsService.deleteReport(targetId);
+      deletedReportIdsRef.current.add(targetId);
+      deleteEpochRef.current += 1;
+
+      if (confirmedCreatedReportRef.current?.id === targetId) {
+        confirmedCreatedReportRef.current = null;
+      }
+
       setItems((prev) => prev.filter((r) => r.id !== targetId));
       setTotalCount((prev) => Math.max(0, prev - 1));
-      if (confirmedCreatedReport?.id === targetId) {
-        setConfirmedCreatedReport(null);
-      }
       if (highlightedId === targetId) {
         setHighlightedId(null);
       }

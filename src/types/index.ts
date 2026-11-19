@@ -78,10 +78,22 @@ export interface BeachReport {
   flagsCount?: number;
 }
 
+export interface CreateReportFallbackDisplay {
+  beachSlug: string;
+  beachName: string;
+  userName: string;
+  userAvatarUrl?: string;
+}
+
 export interface CreateReportPayload {
   beachId: string;
   rating: 1 | 2 | 3 | 4 | 5;
   comment?: string;
+  reportId?: string;
+  photoBlob?: Blob | null;
+  existingPhotoPath?: string | null;
+  isRetryAfterAmbiguousError?: boolean;
+  fallbackDisplay?: CreateReportFallbackDisplay;
 }
 
 export interface PaginatedReportsResult {

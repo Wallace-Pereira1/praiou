@@ -1,11 +1,12 @@
-import { MapPin, Trash2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ImageOff, MapPin, Maximize2, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { BeachReport } from '../../types';
 import { formatRelativeTime, getInitials } from '../../utils/formatters';
 import { Badge } from '../ui/Badge';
 import { Card } from '../ui/Card';
 import { SunRatingDisplay } from '../ui/StarRating';
+import { ReportPhotoViewerModal } from './ReportPhotoViewerModal';
 
 interface ReportCardProps {
   report: BeachReport;
@@ -21,10 +22,21 @@ export function ReportCard({
   onDeleteRequest,
 }: ReportCardProps) {
   const [avatarError, setAvatarError] = useState(false);
+  const [photoError, setPhotoError] = useState(false);
+  const [isPhotoViewerOpen, setIsPhotoViewerOpen] = useState(false);
+  const photoButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     setAvatarError(false);
   }, [report.userAvatarUrl]);
+
+  useEffect(() => {
+    setPhotoError(false);
+    setIsPhotoViewerOpen(false);
+  }, [report.photoUrl]);
+
+  const photoAlt =
+    report.photoAlt ?? `Foto enviada no relato sobre ${report.beachName}`;
 
   return (
     <Card
@@ -88,6 +100,38 @@ export function ReportCard({
           </p>
         )}
 
+        {/* Foto opcional do relato (mantém proporção natural sem placeholder vazio) */}
+        {report.photoUrl && (
+          <div className="mt-3.5">
+            {photoError ? (
+              <div className="flex items-center gap-2 rounded-xl border border-[#E2E8F0] bg-slate-50 px-3.5 py-2.5 text-xs text-[#475569]">
+                <ImageOff className="h-4 w-4 shrink-0 text-[#64748B]" aria-hidden="true" />
+                <span>Foto indisponível no momento.</span>
+              </div>
+            ) : (
+              <button
+                ref={photoButtonRef}
+                type="button"
+                onClick={() => setIsPhotoViewerOpen(true)}
+                aria-label={`Ampliar foto do relato de ${report.userName} em ${report.beachName}`}
+                className="group relative block w-full overflow-hidden rounded-xl border border-[#E2E8F0] bg-slate-50 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0284C7]"
+              >
+                <img
+                  src={report.photoUrl}
+                  alt={photoAlt}
+                  loading="lazy"
+                  onError={() => setPhotoError(true)}
+                  className="mx-auto block max-h-72 w-full object-contain transition-transform duration-200 group-hover:scale-[1.01]"
+                />
+                <span className="pointer-events-none absolute right-2.5 bottom-2.5 inline-flex items-center gap-1 rounded-lg bg-slate-900/75 px-2.5 py-1 text-[11px] font-semibold text-white">
+                  <Maximize2 className="h-3 w-3" aria-hidden="true" />
+                  Ampliar
+                </span>
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Exclusão disponível apenas para o autor (passada pela tela pai) */}
         {onDeleteRequest && (
           <div className="mt-2.5 flex items-center justify-end gap-1 border-t border-slate-100 pt-1.5">
@@ -102,6 +146,18 @@ export function ReportCard({
           </div>
         )}
       </article>
+
+      {report.photoUrl && (
+        <ReportPhotoViewerModal
+          open={isPhotoViewerOpen}
+          photoUrl={report.photoUrl}
+          alt={photoAlt}
+          authorName={report.userName}
+          beachName={report.beachName}
+          returnFocusRef={photoButtonRef}
+          onClose={() => setIsPhotoViewerOpen(false)}
+        />
+      )}
     </Card>
   );
 }

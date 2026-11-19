@@ -79,6 +79,9 @@ export function ProfilePage() {
   const [reportsError, setReportsError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [reportPendingDelete, setReportPendingDelete] = useState<string | null>(null);
+  const loadRequestIdRef = useRef(0);
+  const deleteEpochRef = useRef(0);
+  const deletedReportIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     setAvatarLoadError(false);
@@ -90,6 +93,9 @@ export function ProfilePage() {
 
   const loadUserReports = useCallback(
     async (userId: string, targetPage: number, append: boolean) => {
+      const requestId = ++loadRequestIdRef.current;
+      const startDeleteEpoch = deleteEpochRef.current;
+
       if (append) {
         setReportsLoadingMore(true);
       } else {
@@ -108,24 +114,37 @@ export function ProfilePage() {
             : reportsService.getUserEvaluatedBeachesCount(userId),
         ]);
 
-        setReportsPage(pageResult.page);
-        setUserReportsTotal(pageResult.totalCount);
-        setReportsHasMore(pageResult.hasMore);
-
-        if (beachesTotal !== null) {
-          setEvaluatedBeachesCount(beachesTotal);
+        if (requestId !== loadRequestIdRef.current) {
+          return;
         }
+
+        const filteredItems = pageResult.items.filter(
+          (r) => !deletedReportIdsRef.current.has(r.id)
+        );
+        const deletedDuringFetch = startDeleteEpoch !== deleteEpochRef.current;
+
+        setReportsPage(pageResult.page);
+        if (!deletedDuringFetch) {
+          setUserReportsTotal(pageResult.totalCount);
+          if (beachesTotal !== null) {
+            setEvaluatedBeachesCount(beachesTotal);
+          }
+        }
+        setReportsHasMore(pageResult.hasMore);
 
         if (append) {
           setUserReports((prev) => {
             const seen = new Set(prev.map((r) => r.id));
-            const next = pageResult.items.filter((r) => !seen.has(r.id));
+            const next = filteredItems.filter((r) => !seen.has(r.id));
             return [...prev, ...next];
           });
         } else {
-          setUserReports(pageResult.items);
+          setUserReports(filteredItems);
         }
       } catch (err) {
+        if (requestId !== loadRequestIdRef.current) {
+          return;
+        }
         if (!append) {
           setUserReports([]);
           setUserReportsTotal(0);
@@ -138,8 +157,10 @@ export function ProfilePage() {
             : 'Não foi possível carregar seus relatos agora.'
         );
       } finally {
-        setReportsLoading(false);
-        setReportsLoadingMore(false);
+        if (requestId === loadRequestIdRef.current) {
+          setReportsLoading(false);
+          setReportsLoadingMore(false);
+        }
       }
     },
     []
@@ -147,6 +168,7 @@ export function ProfilePage() {
 
   useEffect(() => {
     if (!authReady || !user?.id) {
+      loadRequestIdRef.current += 1;
       setUserReports([]);
       setUserReportsTotal(0);
       setEvaluatedBeachesCount(0);
@@ -175,6 +197,8 @@ export function ProfilePage() {
 
     try {
       await reportsService.deleteReport(targetId);
+      deletedReportIdsRef.current.add(targetId);
+      deleteEpochRef.current += 1;
       setUserReports((prev) => prev.filter((r) => r.id !== targetId));
       setUserReportsTotal((prev) => Math.max(0, prev - 1));
       try {

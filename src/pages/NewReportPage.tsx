@@ -1,5 +1,19 @@
-import { AlertTriangle, ArrowLeft, Camera, Loader2, LogIn } from 'lucide-react';
-import { useEffect, useState, type FormEvent } from 'react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Camera,
+  Loader2,
+  LogIn,
+  RefreshCw,
+  Trash2,
+} from 'lucide-react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+} from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { AuthMethodsPanel } from '../components/auth/AuthMethodsPanel';
 import { Badge } from '../components/ui/Badge';
@@ -9,6 +23,31 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { SunRatingInput } from '../components/ui/StarRating';
 import { useApp } from '../context/AppContext';
 import * as reportsService from '../services/reports';
+import {
+  generateReportUuid,
+  prepareReportImageForUpload,
+} from '../utils/reportImage';
+
+interface PendingSubmissionAttempt {
+  reportId: string;
+  uploadedPhotoPath: string | null;
+  ambiguous: boolean;
+}
+
+function getSubmissionStageLabel(
+  stage: reportsService.ReportSubmissionStage
+): string {
+  switch (stage) {
+    case 'preparing':
+      return 'Preparando relato...';
+    case 'checking':
+      return 'Verificando publicação...';
+    case 'uploading':
+      return 'Enviando foto...';
+    case 'saving':
+      return 'Salvando relato...';
+  }
+}
 
 export function NewReportPage() {
   const { beaches, user, authReady } = useApp();
@@ -21,8 +60,29 @@ export function NewReportPage() {
   const [beachId, setBeachId] = useState<string>(initialBeach?.id ?? '');
   const [rating, setRating] = useState<1 | 2 | 3 | 4 | 5 | null>(null);
   const [comment, setComment] = useState('');
+
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  const [preparedPhotoBlob, setPreparedPhotoBlob] = useState<Blob | null>(null);
+  const [photoDimensions, setPhotoDimensions] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
+  const [isPreparingPhoto, setIsPreparingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionStage, setSubmissionStage] =
+    useState<reportsService.ReportSubmissionStage>('preparing');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
+  const isSubmittingRef = useRef(false);
+  const pendingAttemptRef = useRef<PendingSubmissionAttempt>({
+    reportId: generateReportUuid(),
+    uploadedPhotoPath: null,
+    ambiguous: false,
+  });
 
   useEffect(() => {
     if (!beachId && initialBeach) {
@@ -30,8 +90,70 @@ export function NewReportPage() {
     }
   }, [beachId, initialBeach]);
 
+  useEffect(() => {
+    return () => {
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
+      }
+    };
+  }, []);
+
+  const replacePreviewUrl = (nextUrl: string | null) => {
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+    }
+    previewUrlRef.current = nextUrl;
+    setPhotoPreviewUrl(nextUrl);
+  };
+
+  const resetUploadedPhotoState = () => {
+    pendingAttemptRef.current.uploadedPhotoPath = null;
+    pendingAttemptRef.current.ambiguous = false;
+  };
+
+  const handlePhotoChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    e.target.value = '';
+    if (!file || isSubmittingRef.current || isPreparingPhoto) return;
+
+    setPhotoError(null);
+    setErrorMessage(null);
+    setIsPreparingPhoto(true);
+
+    try {
+      const prepared = await prepareReportImageForUpload(file);
+      const nextPreviewUrl = URL.createObjectURL(prepared.blob);
+
+      resetUploadedPhotoState();
+      setPreparedPhotoBlob(prepared.blob);
+      setPhotoDimensions({ width: prepared.width, height: prepared.height });
+      replacePreviewUrl(nextPreviewUrl);
+    } catch (err) {
+      setPhotoError(
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível preparar a foto selecionada.'
+      );
+    } finally {
+      setIsPreparingPhoto(false);
+    }
+  };
+
+  const handleRemovePhoto = () => {
+    if (isSubmittingRef.current || isPreparingPhoto) return;
+    setPhotoError(null);
+    setErrorMessage(null);
+    resetUploadedPhotoState();
+    setPreparedPhotoBlob(null);
+    setPhotoDimensions(null);
+    replacePreviewUrl(null);
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (isSubmittingRef.current || isPreparingPhoto) return;
+
     setErrorMessage(null);
 
     if (!user) {
@@ -49,14 +171,45 @@ export function NewReportPage() {
       return;
     }
 
+    const selectedBeach = beaches.find((b) => b.id === beachId);
+    const attempt = pendingAttemptRef.current;
+
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
+    setSubmissionStage('preparing');
 
     try {
-      const created = await reportsService.createReport({
-        beachId,
-        rating,
-        comment,
-      });
+      const created = await reportsService.createReport(
+        {
+          beachId,
+          rating,
+          comment,
+          reportId: attempt.reportId,
+          photoBlob: preparedPhotoBlob,
+          existingPhotoPath: attempt.uploadedPhotoPath,
+          isRetryAfterAmbiguousError: attempt.ambiguous,
+          fallbackDisplay: {
+            beachSlug: selectedBeach?.slug ?? '',
+            beachName: selectedBeach?.name ?? 'Praia do Rio',
+            userName: user.name,
+            userAvatarUrl: user.avatarUrl,
+          },
+        },
+        {
+          onStageChange: (stage) => {
+            setSubmissionStage(stage);
+          },
+          onPhotoUploaded: (photoPath) => {
+            pendingAttemptRef.current.uploadedPhotoPath = photoPath;
+          },
+        }
+      );
+
+      pendingAttemptRef.current = {
+        reportId: generateReportUuid(),
+        uploadedPhotoPath: null,
+        ambiguous: false,
+      };
 
       navigate('/feed', {
         state: {
@@ -65,12 +218,29 @@ export function NewReportPage() {
         },
       });
     } catch (err) {
+      if (err instanceof reportsService.ReportPublishError) {
+        pendingAttemptRef.current = {
+          reportId: attempt.reportId,
+          uploadedPhotoPath: err.ambiguous
+            ? err.uploadedPhotoPath ?? attempt.uploadedPhotoPath
+            : null,
+          ambiguous: err.ambiguous,
+        };
+      } else {
+        pendingAttemptRef.current = {
+          reportId: attempt.reportId,
+          uploadedPhotoPath: null,
+          ambiguous: false,
+        };
+      }
+
       setErrorMessage(
         err instanceof Error
           ? err.message
           : 'Não foi possível publicar agora. Verifique sua conexão e tente novamente.'
       );
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -82,7 +252,8 @@ export function NewReportPage() {
           <button
             type="button"
             onClick={() => navigate(-1)}
-            className="min-h-[44px] inline-flex items-center gap-1.5 rounded-xl px-2.5 -ml-2 text-sm font-semibold text-[#0F172A] hover:bg-slate-100 transition-colors"
+            disabled={isSubmitting}
+            className="min-h-[44px] inline-flex items-center gap-1.5 rounded-xl px-2.5 -ml-2 text-sm font-semibold text-[#0F172A] hover:bg-slate-100 disabled:opacity-50 transition-colors"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
             Voltar
@@ -129,11 +300,12 @@ export function NewReportPage() {
                 <select
                   id="beach-select"
                   value={beachId}
+                  disabled={isSubmitting}
                   onChange={(e) => {
                     setBeachId(e.target.value);
                     setErrorMessage(null);
                   }}
-                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[#E2E8F0] bg-white px-3.5 text-sm font-medium text-[#0F172A] focus:border-[#0284C7] focus:outline-none"
+                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[#E2E8F0] bg-white px-3.5 text-sm font-medium text-[#0F172A] focus:border-[#0284C7] focus:outline-none disabled:bg-slate-50"
                 >
                   <option value="">Selecione uma praia...</option>
                   {beaches.map((beach) => (
@@ -156,6 +328,7 @@ export function NewReportPage() {
                   <SunRatingInput
                     value={rating}
                     onChange={(val) => {
+                      if (isSubmitting) return;
                       setRating(val);
                       setErrorMessage(null);
                     }}
@@ -189,27 +362,112 @@ export function NewReportPage() {
                   rows={3}
                   maxLength={180}
                   value={comment}
+                  disabled={isSubmitting}
                   onChange={(e) => setComment(e.target.value)}
                   placeholder="Ex.: Vento fraco, água limpa e mar tranquilo no Posto 9."
-                  className="mt-2 w-full rounded-xl border border-[#E2E8F0] bg-white p-3.5 text-sm text-[#0F172A] placeholder:text-[#475569]/70 focus:border-[#0284C7] focus:outline-none resize-none"
+                  className="mt-2 w-full rounded-xl border border-[#E2E8F0] bg-white p-3.5 text-sm text-[#0F172A] placeholder:text-[#475569]/70 focus:border-[#0284C7] focus:outline-none resize-none disabled:bg-slate-50"
                 />
               </div>
 
-              {/* Foto desativada temporariamente (sem upload falso) */}
+              {/* Foto opcional da praia (1 foto por relato) */}
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-bold text-[#0F172A]">Foto da praia</span>
-                  <Badge tone="neutral">Em breve</Badge>
+                  <Badge tone="neutral">Opcional</Badge>
                 </div>
-                <div className="mt-2 flex items-start gap-3 rounded-xl border border-dashed border-[#CBD5E1] bg-slate-50/80 px-4 py-3.5 text-xs text-[#475569]">
-                  <Camera className="h-4 w-4 mt-0.5 shrink-0 text-[#64748B]" aria-hidden="true" />
-                  <p className="leading-relaxed">
-                    O envio de fotos estará disponível em breve. Nesta etapa, publique sua nota e comentário de texto em tempo real.
-                  </p>
-                </div>
+
+                <input
+                  ref={photoInputRef}
+                  id="report-photo-input"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={handlePhotoChange}
+                  disabled={isSubmitting || isPreparingPhoto}
+                  className="sr-only"
+                />
+
+                {photoPreviewUrl && preparedPhotoBlob ? (
+                  <div className="mt-2.5 space-y-2.5">
+                    <div className="overflow-hidden rounded-xl border border-[#E2E8F0] bg-slate-50 p-2">
+                      <img
+                        src={photoPreviewUrl}
+                        alt="Prévia da foto selecionada para o relato"
+                        className="mx-auto block max-h-64 w-full rounded-lg object-contain"
+                      />
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="md"
+                          disabled={isSubmitting || isPreparingPhoto}
+                          onClick={() => photoInputRef.current?.click()}
+                        >
+                          <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                          Trocar foto
+                        </Button>
+
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="md"
+                          disabled={isSubmitting || isPreparingPhoto}
+                          onClick={handleRemovePhoto}
+                          className="text-[#991B1B] border-[#EF4444]/30 hover:bg-[#FEE2E2]/50"
+                        >
+                          <Trash2 className="h-4 w-4" aria-hidden="true" />
+                          Remover foto
+                        </Button>
+                      </div>
+
+                      {photoDimensions && (
+                        <span className="text-xs text-[#475569] tabular-nums">
+                          {photoDimensions.width}×{photoDimensions.height}px
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-2.5">
+                    <button
+                      type="button"
+                      disabled={isSubmitting || isPreparingPhoto}
+                      onClick={() => photoInputRef.current?.click()}
+                      className="flex min-h-[84px] w-full items-center justify-center gap-3 rounded-xl border border-dashed border-[#CBD5E1] bg-slate-50/70 px-4 py-4 text-sm font-semibold text-[#0284C7] hover:border-[#0284C7] hover:bg-sky-50/60 disabled:opacity-60 transition-colors"
+                    >
+                      {isPreparingPhoto ? (
+                        <>
+                          <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+                          <span>Preparando imagem...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Camera className="h-5 w-5 shrink-0" aria-hidden="true" />
+                          <span>Adicionar foto da praia</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                <p className="mt-2 text-xs text-[#475569]">
+                  Formatos aceitos: JPEG, PNG ou WebP (máx. 5 MB). A foto será visível publicamente no relato.
+                </p>
+
+                {photoError && (
+                  <div
+                    role="alert"
+                    className="mt-2 flex items-start gap-2 rounded-xl border border-[#EF4444]/30 bg-[#FEE2E2] px-3.5 py-2.5 text-xs font-medium text-[#991B1B]"
+                  >
+                    <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" aria-hidden="true" />
+                    <span>{photoError}</span>
+                  </div>
+                )}
               </div>
 
-              {/* Erro inline (mantém o texto digitado) */}
+              {/* Erro inline de publicação (mantém praia, sóis, comentário e foto) */}
               {errorMessage && (
                 <div
                   role="alert"
@@ -220,8 +478,16 @@ export function NewReportPage() {
                 </div>
               )}
 
-              <Button type="submit" size="lg" fullWidth loading={isSubmitting}>
-                {isSubmitting ? 'Publicando relato...' : 'Publicar relato'}
+              <Button
+                type="submit"
+                size="lg"
+                fullWidth
+                loading={isSubmitting}
+                disabled={isSubmitting || isPreparingPhoto}
+              >
+                {isSubmitting
+                  ? getSubmissionStageLabel(submissionStage)
+                  : 'Publicar relato'}
               </Button>
             </form>
           </Card>

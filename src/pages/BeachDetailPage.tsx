@@ -15,7 +15,7 @@ import {
   Wind,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { SafetyNotice } from '../components/layout/SafetyNotice';
 import { ReportCard } from '../components/social/ReportCard';
@@ -59,6 +59,9 @@ export function BeachDetailPage() {
   const [reportsError, setReportsError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [reportPendingDelete, setReportPendingDelete] = useState<string | null>(null);
+  const loadRequestIdRef = useRef(0);
+  const deleteEpochRef = useRef(0);
+  const deletedReportIdsRef = useRef<Set<string>>(new Set());
 
   const beach = beaches.find((b) => b.slug === slug);
   const snapshot = beach ? getSnapshotByBeachId(beach.id) : undefined;
@@ -70,6 +73,9 @@ export function BeachDetailPage() {
 
   const loadBeachReports = useCallback(
     async (targetBeachId: string, targetPage: number, append: boolean) => {
+      const requestId = ++loadRequestIdRef.current;
+      const startDeleteEpoch = deleteEpochRef.current;
+
       if (append) {
         setReportsLoadingMore(true);
       } else {
@@ -83,20 +89,34 @@ export function BeachDetailPage() {
           pageSize: reportsService.DEFAULT_REPORTS_PAGE_SIZE,
         });
 
+        if (requestId !== loadRequestIdRef.current) {
+          return;
+        }
+
+        const filteredItems = result.items.filter(
+          (r) => !deletedReportIdsRef.current.has(r.id)
+        );
+        const deletedDuringFetch = startDeleteEpoch !== deleteEpochRef.current;
+
         setReportsPage(result.page);
-        setBeachReportsTotal(result.totalCount);
+        if (!deletedDuringFetch) {
+          setBeachReportsTotal(result.totalCount);
+        }
         setReportsHasMore(result.hasMore);
 
         if (append) {
           setBeachReports((prev) => {
             const seen = new Set(prev.map((r) => r.id));
-            const next = result.items.filter((r) => !seen.has(r.id));
+            const next = filteredItems.filter((r) => !seen.has(r.id));
             return [...prev, ...next];
           });
         } else {
-          setBeachReports(result.items);
+          setBeachReports(filteredItems);
         }
       } catch (err) {
+        if (requestId !== loadRequestIdRef.current) {
+          return;
+        }
         if (!append) {
           setBeachReports([]);
           setBeachReportsTotal(0);
@@ -108,8 +128,10 @@ export function BeachDetailPage() {
             : 'Não foi possível carregar os relatos desta praia.'
         );
       } finally {
-        setReportsLoading(false);
-        setReportsLoadingMore(false);
+        if (requestId === loadRequestIdRef.current) {
+          setReportsLoading(false);
+          setReportsLoadingMore(false);
+        }
       }
     },
     []
@@ -117,6 +139,7 @@ export function BeachDetailPage() {
 
   useEffect(() => {
     if (!beach?.id || devState === 'vazio') {
+      loadRequestIdRef.current += 1;
       setBeachReports([]);
       setBeachReportsTotal(0);
       setReportsHasMore(false);
@@ -157,6 +180,8 @@ export function BeachDetailPage() {
 
     try {
       await reportsService.deleteReport(targetId);
+      deletedReportIdsRef.current.add(targetId);
+      deleteEpochRef.current += 1;
       setBeachReports((prev) => prev.filter((r) => r.id !== targetId));
       setBeachReportsTotal((prev) => Math.max(0, prev - 1));
     } catch (err) {
