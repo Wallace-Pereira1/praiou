@@ -4,6 +4,7 @@ import type {
   CreateReportPayload,
   PaginatedReportsResult,
 } from '../types';
+import { resolveProfileAvatarUrl } from './profiles';
 
 export const DEFAULT_REPORTS_PAGE_SIZE = 20;
 
@@ -11,6 +12,7 @@ interface JoinedProfileRow {
   id: string;
   display_name: string | null;
   avatar_url: string | null;
+  avatar_path: string | null;
 }
 
 interface JoinedBeachRow {
@@ -40,7 +42,8 @@ const REPORT_SELECT = `
   profiles:user_id (
     id,
     display_name,
-    avatar_url
+    avatar_url,
+    avatar_path
   ),
   beaches:beach_id (
     id,
@@ -71,7 +74,10 @@ function mapSupabaseReport(row: SupabaseBeachReportRow): BeachReport {
     beachName: beach?.name ?? 'Praia do Rio',
     userId: row.user_id,
     userName: profile?.display_name?.trim() || 'Banhista',
-    userAvatarUrl: profile?.avatar_url?.trim() || undefined,
+    userAvatarUrl: resolveProfileAvatarUrl(
+      profile?.avatar_path,
+      profile?.avatar_url
+    ),
     rating: normalizeRating(Number(row.rating)),
     comment: row.comment ?? '',
     createdAt: row.created_at,

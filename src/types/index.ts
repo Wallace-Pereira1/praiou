@@ -53,6 +53,8 @@ export interface UserProfile {
   id: string;
   displayName: string;
   avatarUrl?: string;
+  externalAvatarUrl?: string;
+  avatarPath?: string;
   bannerPath?: string;
   createdAt: string;
   updatedAt: string;
@@ -95,6 +97,7 @@ export interface AppUser {
   email: string;
   provider: 'google' | 'email';
   avatarUrl?: string;
+  hasCustomAvatar?: boolean;
 }
 
 export type User = AppUser;

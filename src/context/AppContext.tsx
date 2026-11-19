@@ -37,6 +37,8 @@ interface AppContextValue {
   refreshData: (forceRefresh?: boolean) => Promise<void>;
   refreshProfile: () => Promise<void>;
   updateProfileName: (displayName: string) => Promise<UserProfile>;
+  uploadProfileAvatar: (blob: Blob) => Promise<UserProfile>;
+  removeProfileAvatar: () => Promise<UserProfile>;
   signInWithGoogle: () => Promise<void>;
   exchangeOAuthCode: (code: string) => Promise<AppUser>;
   logout: () => Promise<void>;
@@ -158,6 +160,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  const uploadProfileAvatar = useCallback(async (blob: Blob): Promise<UserProfile> => {
+    const updated = await profilesService.uploadOwnAvatar(blob);
+    setProfile(updated);
+    setProfileError(null);
+    return updated;
+  }, []);
+
+  const removeProfileAvatar = useCallback(async (): Promise<UserProfile> => {
+    const updated = await profilesService.removeOwnAvatar();
+    setProfile(updated);
+    setProfileError(null);
+    return updated;
+  }, []);
+
   const loadAll = useCallback(async (forceRefresh = false) => {
     setLoadError(null);
     try {
@@ -227,6 +243,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ...authUser,
       name: profile?.displayName ?? authUser.name,
       avatarUrl: profile?.avatarUrl ?? authUser.avatarUrl,
+      hasCustomAvatar: Boolean(profile?.avatarPath),
     };
   }, [authUser, profile]);
 
@@ -248,6 +265,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         refreshData,
         refreshProfile,
         updateProfileName,
+        uploadProfileAvatar,
+        removeProfileAvatar,
         signInWithGoogle,
         exchangeOAuthCode,
         logout,

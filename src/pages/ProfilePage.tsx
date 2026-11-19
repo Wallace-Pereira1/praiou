@@ -1,17 +1,27 @@
 import {
   AlertTriangle,
+  Camera,
   Check,
   Loader2,
   LogIn,
   LogOut,
   Pencil,
   Plus,
+  Trash2,
   User as UserIcon,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+} from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AppLayout } from '../components/layout/AppLayout';
+import { AvatarCropModal } from '../components/social/AvatarCropModal';
 import { ReportCard } from '../components/social/ReportCard';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -20,6 +30,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorState } from '../components/ui/ErrorState';
 import { Skeleton } from '../components/ui/Skeleton';
 import { useApp } from '../context/AppContext';
+import { validateAvatarFile } from '../services/profiles';
 import * as reportsService from '../services/reports';
 import type { BeachReport } from '../types';
 import { getInitials } from '../utils/formatters';
@@ -32,11 +43,20 @@ export function ProfilePage() {
     profileLoading,
     refreshProfile,
     updateProfileName,
+    uploadProfileAvatar,
+    removeProfileAvatar,
     logout,
   } = useApp();
   const navigate = useNavigate();
 
-  const [avatarError, setAvatarError] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [avatarLoadError, setAvatarLoadError] = useState(false);
+  const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [isRemovingAvatar, setIsRemovingAvatar] = useState(false);
+  const [avatarActionError, setAvatarActionError] = useState<string | null>(null);
+  const [cropError, setCropError] = useState<string | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const [isEditingName, setIsEditingName] = useState(false);
@@ -56,7 +76,7 @@ export function ProfilePage() {
   const [reportPendingDelete, setReportPendingDelete] = useState<string | null>(null);
 
   useEffect(() => {
-    setAvatarError(false);
+    setAvatarLoadError(false);
   }, [user?.avatarUrl]);
 
   const loadUserReports = useCallback(
@@ -195,6 +215,73 @@ export function ProfilePage() {
     }
   };
 
+  const handleSelectAvatarFile = (e: ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files?.[0] ?? null;
+    e.target.value = '';
+    if (!selected || isUploadingAvatar || isRemovingAvatar) return;
+
+    setAvatarActionError(null);
+    setCropError(null);
+
+    const validationError = validateAvatarFile(selected);
+    if (validationError) {
+      setAvatarActionError(validationError);
+      return;
+    }
+
+    setPendingAvatarFile(selected);
+  };
+
+  const handleSaveCroppedAvatar = async (croppedBlob: Blob) => {
+    if (isUploadingAvatar || isRemovingAvatar) return;
+    setCropError(null);
+    setAvatarActionError(null);
+    setIsUploadingAvatar(true);
+
+    try {
+      const updated = await uploadProfileAvatar(croppedBlob);
+      setUserReports((prev) =>
+        prev.map((r) =>
+          r.userId === updated.id ? { ...r, userAvatarUrl: updated.avatarUrl } : r
+        )
+      );
+      setPendingAvatarFile(null);
+    } catch (err) {
+      setCropError(
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível salvar a nova foto agora. Sua foto anterior foi mantida.'
+      );
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
+  const handleRemoveCustomAvatar = async () => {
+    if (isUploadingAvatar || isRemovingAvatar || !user?.hasCustomAvatar) return;
+    setAvatarActionError(null);
+    setIsRemovingAvatar(true);
+
+    try {
+      const updated = await removeProfileAvatar();
+      setUserReports((prev) =>
+        prev.map((r) =>
+          r.userId === updated.id ? { ...r, userAvatarUrl: updated.avatarUrl } : r
+        )
+      );
+    } catch (err) {
+      setAvatarActionError(
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível remover sua foto personalizada agora.'
+      );
+    } finally {
+      setIsRemovingAvatar(false);
+    }
+  };
+
+  const avatarBusy = isUploadingAvatar || isRemovingAvatar;
+
   return (
     <AppLayout>
       {!authReady ? (
@@ -252,12 +339,12 @@ export function ProfilePage() {
           <Card padding="lg">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-4 min-w-0">
-                {user.avatarUrl && !avatarError ? (
+                {user.avatarUrl && !avatarLoadError ? (
                   <img
                     src={user.avatarUrl}
                     alt={user.name}
                     referrerPolicy="no-referrer"
-                    onError={() => setAvatarError(true)}
+                    onError={() => setAvatarLoadError(true)}
                     className="h-16 w-16 shrink-0 rounded-full border border-[#E2E8F0] object-cover"
                   />
                 ) : (
@@ -348,6 +435,77 @@ export function ProfilePage() {
                 {isLoggingOut ? 'Saindo...' : 'Sair'}
               </Button>
             </div>
+
+            {!profileError && (
+              <div className="mt-4 border-t border-slate-100 pt-4 space-y-2.5">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={handleSelectAvatarFile}
+                  disabled={avatarBusy || profileLoading}
+                  className="sr-only"
+                  aria-label="Selecionar arquivo de foto de perfil"
+                />
+
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="secondary"
+                      size="md"
+                      loading={isUploadingAvatar}
+                      disabled={avatarBusy || profileLoading}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      {!isUploadingAvatar && (
+                        <Camera className="h-4 w-4 text-[#0284C7]" aria-hidden="true" />
+                      )}
+                      {user.hasCustomAvatar ? 'Alterar foto' : 'Adicionar foto'}
+                    </Button>
+
+                    {user.hasCustomAvatar && (
+                      <Button
+                        variant="ghost"
+                        size="md"
+                        loading={isRemovingAvatar}
+                        disabled={avatarBusy || profileLoading}
+                        onClick={() => void handleRemoveCustomAvatar()}
+                        className="text-[#991B1B] hover:bg-[#FEE2E2]/60"
+                      >
+                        {!isRemovingAvatar && (
+                          <Trash2 className="h-4 w-4" aria-hidden="true" />
+                        )}
+                        {isRemovingAvatar ? 'Removendo...' : 'Remover foto'}
+                      </Button>
+                    )}
+                  </div>
+
+                  <p className="text-xs text-[#475569]">
+                    Foto visível publicamente · JPEG, PNG ou WebP (máx. 2 MB)
+                  </p>
+                </div>
+
+                {avatarActionError && (
+                  <div
+                    role="alert"
+                    className="flex items-center justify-between gap-3 rounded-xl border border-[#EF4444]/30 bg-[#FEE2E2] px-3.5 py-2.5 text-xs font-medium text-[#991B1B]"
+                  >
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      <span>{avatarActionError}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAvatarActionError(null)}
+                      aria-label="Fechar erro da foto"
+                      className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg hover:bg-red-200/50 transition-colors"
+                    >
+                      <X className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="mt-5 grid grid-cols-2 gap-4 border-t border-slate-100 pt-4">
               <div>
@@ -475,6 +633,19 @@ export function ProfilePage() {
               </div>
             )}
           </section>
+
+          <AvatarCropModal
+            file={pendingAvatarFile}
+            saving={isUploadingAvatar}
+            errorMessage={cropError}
+            onClose={() => {
+              if (!isUploadingAvatar) {
+                setPendingAvatarFile(null);
+                setCropError(null);
+              }
+            }}
+            onSave={handleSaveCroppedAvatar}
+          />
 
           <ConfirmModal
             open={reportPendingDelete !== null}
