@@ -12,6 +12,12 @@ import type {
   ReportFlagReason,
   ReportFlagStatus,
 } from '../types';
+import {
+  normalizeCrowdLevel,
+  normalizePostCode,
+  normalizeSeaCondition,
+  normalizeSkyCondition,
+} from '../utils/reportConditions';
 import { resolveProfileAvatarUrl } from './profiles';
 import { getReportPhotoPublicUrl } from './reports';
 
@@ -277,7 +283,11 @@ interface RawModerationReportItem {
   authorName: string;
   authorAvatarUrl?: string | null;
   authorAvatarPath?: string | null;
-  rating: number;
+  rating?: number | null;
+  postCode?: string | null;
+  skyCondition?: string | null;
+  seaCondition?: string | null;
+  crowdLevel?: string | null;
   comment?: string | null;
   photoPath?: string | null;
   reportCreatedAt: string;
@@ -306,7 +316,10 @@ interface RawModerationReportItem {
   }>;
 }
 
-function normalizeRating(raw: number): 1 | 2 | 3 | 4 | 5 {
+function normalizeRating(
+  raw: number | null | undefined
+): 1 | 2 | 3 | 4 | 5 | null {
+  if (raw == null || !Number.isFinite(raw)) return null;
   if (raw <= 1) return 1;
   if (raw >= 5) return 5;
   return Math.round(raw) as 1 | 2 | 3 | 4 | 5;
@@ -349,7 +362,11 @@ function mapModerationItem(raw: RawModerationReportItem): ModerationReportItem {
       raw.authorAvatarPath,
       raw.authorAvatarUrl
     ),
-    rating: normalizeRating(Number(raw.rating)),
+    rating: normalizeRating(raw.rating),
+    postCode: normalizePostCode(raw.postCode),
+    skyCondition: normalizeSkyCondition(raw.skyCondition),
+    seaCondition: normalizeSeaCondition(raw.seaCondition),
+    crowdLevel: normalizeCrowdLevel(raw.crowdLevel),
     comment: raw.comment ?? '',
     photoPath,
     photoUrl,

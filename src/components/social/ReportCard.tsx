@@ -16,9 +16,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { BeachReport } from '../../types';
 import { formatRelativeTime, getInitials } from '../../utils/formatters';
+import { formatReportConditionsSummary } from '../../utils/reportConditions';
 import { Badge } from '../ui/Badge';
 import { Card } from '../ui/Card';
-import { SunRatingDisplay } from '../ui/StarRating';
 import { ReportPhotoViewerModal } from './ReportPhotoViewerModal';
 
 interface ReportCardProps {
@@ -128,6 +128,13 @@ export function ReportCard({
       : `${report.replyCount} respostas`
     : 'Contagem de respostas indisponível no momento';
 
+  const conditionsSummary = formatReportConditionsSummary({
+    postCode: report.postCode,
+    skyCondition: report.skyCondition,
+    seaCondition: report.seaCondition,
+    crowdLevel: report.crowdLevel,
+  });
+
   const avatarVisual =
     report.userAvatarUrl && !avatarError ? (
       <img
@@ -153,71 +160,65 @@ export function ReportCard({
       }`}
     >
       <article className="min-w-0">
-        {/* Cabeçalho do relato: no mobile coloca avaliação em sóis em linha própria; preserva desktop */}
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-          <div className="flex items-start gap-3 min-w-0 flex-1">
-            {authorProfileHref ? (
-              <Link
-                to={authorProfileHref}
-                aria-label={`Ver perfil público de ${report.userName}`}
-                className="shrink-0 rounded-full focus-visible:outline-2 focus-visible:outline-[#0284C7] focus-visible:outline-offset-2"
-              >
-                {avatarVisual}
-              </Link>
-            ) : (
-              avatarVisual
-            )}
+        {/* Cabeçalho do relato */}
+        <div className="flex items-start gap-3 min-w-0">
+          {authorProfileHref ? (
+            <Link
+              to={authorProfileHref}
+              aria-label={`Ver perfil público de ${report.userName}`}
+              className="shrink-0 rounded-full focus-visible:outline-2 focus-visible:outline-[#0284C7] focus-visible:outline-offset-2"
+            >
+              {avatarVisual}
+            </Link>
+          ) : (
+            avatarVisual
+          )}
 
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                {authorProfileHref ? (
-                  <Link
-                    to={authorProfileHref}
-                    className="min-w-0 max-w-full break-words text-sm font-bold text-[#0F172A] hover:text-[#0284C7] hover:underline focus-visible:outline-2 focus-visible:outline-[#0284C7] rounded-sm"
-                  >
-                    {report.userName}
-                  </Link>
-                ) : (
-                  <p className="min-w-0 max-w-full break-words text-sm font-bold text-[#0F172A]">
-                    {report.userName}
-                  </p>
-                )}
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              {authorProfileHref ? (
+                <Link
+                  to={authorProfileHref}
+                  className="min-w-0 max-w-full break-words text-sm font-bold text-[#0F172A] hover:text-[#0284C7] hover:underline focus-visible:outline-2 focus-visible:outline-[#0284C7] rounded-sm"
+                >
+                  {report.userName}
+                </Link>
+              ) : (
+                <p className="min-w-0 max-w-full break-words text-sm font-bold text-[#0F172A]">
+                  {report.userName}
+                </p>
+              )}
 
-                {authorProfileHref && report.userUsername && (
-                  <Link
-                    to={authorProfileHref}
-                    className="min-w-0 max-w-full break-all text-xs font-medium text-[#475569] hover:text-[#0284C7] hover:underline focus-visible:outline-2 focus-visible:outline-[#0284C7] rounded-sm"
-                  >
-                    @{report.userUsername}
-                  </Link>
-                )}
+              {authorProfileHref && report.userUsername && (
+                <Link
+                  to={authorProfileHref}
+                  className="min-w-0 max-w-full break-all text-xs font-medium text-[#475569] hover:text-[#0284C7] hover:underline focus-visible:outline-2 focus-visible:outline-[#0284C7] rounded-sm"
+                >
+                  @{report.userUsername}
+                </Link>
+              )}
 
-                {highlighted && <Badge tone="ocean">Publicado agora</Badge>}
-              </div>
-              <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-[#475569]">
-                {showBeachLink ? (
-                  <Link
-                    to={`/praia/${report.beachSlug}`}
-                    className="inline-flex min-w-0 max-w-full items-center gap-1 font-semibold text-[#0284C7] hover:underline break-words"
-                  >
-                    <MapPin className="h-3 w-3 shrink-0" aria-hidden="true" />
-                    <span className="min-w-0 break-words">{report.beachName}</span>
-                  </Link>
-                ) : (
-                  <span className="min-w-0 max-w-full font-semibold text-[#0F172A] break-words">
-                    {report.beachName}
-                  </span>
-                )}
-                <span aria-hidden="true">·</span>
-                <span className="tabular-nums whitespace-nowrap">
-                  {formatRelativeTime(report.createdAt)}
-                </span>
-              </div>
+              {highlighted && <Badge tone="ocean">Publicado agora</Badge>}
             </div>
-          </div>
-
-          <div className="pl-[52px] sm:pl-0 sm:pt-0.5 shrink-0">
-            <SunRatingDisplay rating={report.rating} />
+            <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-[#475569]">
+              {showBeachLink ? (
+                <Link
+                  to={`/praia/${report.beachSlug}`}
+                  className="inline-flex min-w-0 max-w-full items-center gap-1 font-semibold text-[#0284C7] hover:underline break-words"
+                >
+                  <MapPin className="h-3 w-3 shrink-0" aria-hidden="true" />
+                  <span className="min-w-0 break-words">{report.beachName}</span>
+                </Link>
+              ) : (
+                <span className="min-w-0 max-w-full font-semibold text-[#0F172A] break-words">
+                  {report.beachName}
+                </span>
+              )}
+              <span aria-hidden="true">·</span>
+              <span className="tabular-nums whitespace-nowrap">
+                {formatRelativeTime(report.createdAt)}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -235,6 +236,13 @@ export function ReportCard({
               </p>
             </div>
           </div>
+        )}
+
+        {/* Condições opcionais preenchidas no relato */}
+        {conditionsSummary && (
+          <p className="mt-3 break-words rounded-lg border border-sky-100 bg-sky-50/60 px-3 py-1.5 text-xs font-semibold text-[#0F172A]">
+            {conditionsSummary}
+          </p>
         )}
 
         {/* Comentário do usuário */}

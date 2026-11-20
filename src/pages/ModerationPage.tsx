@@ -30,7 +30,6 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorState } from '../components/ui/ErrorState';
-import { SunRatingDisplay } from '../components/ui/StarRating';
 import { useApp } from '../context/AppContext';
 import {
   DEFAULT_MODERATION_PAGE_SIZE,
@@ -51,6 +50,7 @@ import type {
   ModerationTargetKind,
 } from '../types';
 import { formatRelativeTime, getInitials } from '../utils/formatters';
+import { formatReportConditionsSummary } from '../utils/reportConditions';
 
 function formatExactDateTime(iso: string): string {
   const date = new Date(iso);
@@ -840,7 +840,6 @@ export function ModerationPage() {
                             </div>
 
                             <div className="flex flex-wrap items-center gap-2 shrink-0">
-                              <SunRatingDisplay rating={item.rating} />
                               <span className="inline-flex items-center gap-1 rounded-lg border border-[#E2E8F0] bg-slate-50 px-2 py-1 text-xs font-semibold text-[#475569] tabular-nums">
                                 <ThumbsUp className="h-3 w-3" aria-hidden="true" />
                                 {item.helpfulCount}
@@ -850,6 +849,20 @@ export function ModerationPage() {
 
                           {/* Conteúdo do relato */}
                           <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3.5 space-y-3">
+                            {(() => {
+                              const conditionsSummary = formatReportConditionsSummary({
+                                postCode: item.postCode,
+                                skyCondition: item.skyCondition,
+                                seaCondition: item.seaCondition,
+                                crowdLevel: item.crowdLevel,
+                              });
+                              return conditionsSummary ? (
+                                <p className="break-words text-xs font-semibold text-[#0F172A]">
+                                  {conditionsSummary}
+                                </p>
+                              ) : null;
+                            })()}
+
                             {item.comment ? (
                               <p className="break-words text-sm leading-relaxed text-[#0F172A]">
                                 {item.comment}

@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -20,9 +21,21 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { EmptyState } from '../components/ui/EmptyState';
-import { SunRatingInput } from '../components/ui/StarRating';
 import { useApp } from '../context/AppContext';
 import * as reportsService from '../services/reports';
+import type {
+  BeachPostOption,
+  ReportCrowdLevel,
+  ReportSeaCondition,
+  ReportSkyCondition,
+} from '../types';
+import {
+  CROWD_LEVEL_OPTIONS,
+  SEA_CONDITION_OPTIONS,
+  SKY_CONDITION_OPTIONS,
+  getDefaultPostsForBeachSlug,
+  isValidPostForBeachPosts,
+} from '../utils/reportConditions';
 import {
   generateReportUuid,
   prepareReportImageForUpload,
@@ -58,8 +71,15 @@ export function NewReportPage() {
   const initialBeach = beaches.find((b) => b.slug === searchParams.get('praia'));
 
   const [beachId, setBeachId] = useState<string>(initialBeach?.id ?? '');
-  const [rating, setRating] = useState<1 | 2 | 3 | 4 | 5 | null>(null);
+  const [postCode, setPostCode] = useState<string | null>(null);
+  const [skyCondition, setSkyCondition] = useState<ReportSkyCondition | null>(null);
+  const [seaCondition, setSeaCondition] = useState<ReportSeaCondition | null>(null);
+  const [crowdLevel, setCrowdLevel] = useState<ReportCrowdLevel | null>(null);
   const [comment, setComment] = useState('');
+  const [beachPostsMap, setBeachPostsMap] = useState<Map<
+    string,
+    BeachPostOption[]
+  > | null>(null);
 
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
   const [preparedPhotoBlob, setPreparedPhotoBlob] = useState<Blob | null>(null);
@@ -85,10 +105,41 @@ export function NewReportPage() {
   });
 
   useEffect(() => {
+    let active = true;
+    void reportsService.getBeachPostsMap().then((map) => {
+      if (active && map) {
+        setBeachPostsMap(map);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!beachId && initialBeach) {
       setBeachId(initialBeach.id);
     }
   }, [beachId, initialBeach]);
+
+  const selectedBeach = useMemo(
+    () => beaches.find((b) => b.id === beachId),
+    [beaches, beachId]
+  );
+
+  const availablePosts = useMemo<BeachPostOption[]>(() => {
+    if (!selectedBeach) return [];
+    if (beachPostsMap) {
+      return beachPostsMap.get(selectedBeach.id) ?? [];
+    }
+    return getDefaultPostsForBeachSlug(selectedBeach.slug);
+  }, [selectedBeach, beachPostsMap]);
+
+  useEffect(() => {
+    if (postCode && !isValidPostForBeachPosts(postCode, availablePosts)) {
+      setPostCode(null);
+    }
+  }, [postCode, availablePosts]);
 
   useEffect(() => {
     return () => {
@@ -161,17 +212,16 @@ export function NewReportPage() {
       return;
     }
 
-    if (!beachId) {
+    if (!beachId || !selectedBeach) {
       setErrorMessage('Escolha a praia antes de publicar.');
       return;
     }
 
-    if (rating === null) {
-      setErrorMessage('Selecione uma avaliação de 1 a 5 sóis.');
-      return;
-    }
+    const safePostCode =
+      postCode && isValidPostForBeachPosts(postCode, availablePosts)
+        ? postCode
+        : null;
 
-    const selectedBeach = beaches.find((b) => b.id === beachId);
     const attempt = pendingAttemptRef.current;
 
     isSubmittingRef.current = true;
@@ -182,15 +232,18 @@ export function NewReportPage() {
       const created = await reportsService.createReport(
         {
           beachId,
-          rating,
+          postCode: safePostCode,
+          skyCondition,
+          seaCondition,
+          crowdLevel,
           comment,
           reportId: attempt.reportId,
           photoBlob: preparedPhotoBlob,
           existingPhotoPath: attempt.uploadedPhotoPath,
           isRetryAfterAmbiguousError: attempt.ambiguous,
           fallbackDisplay: {
-            beachSlug: selectedBeach?.slug ?? '',
-            beachName: selectedBeach?.name ?? 'Praia do Rio',
+            beachSlug: selectedBeach.slug,
+            beachName: selectedBeach.name,
             userName: user.name,
             userUsername: user.username,
             userAvatarUrl: user.avatarUrl,
@@ -290,7 +343,7 @@ export function NewReportPage() {
         ) : (
           <Card padding="lg">
             <form onSubmit={handleSubmit} noValidate className="space-y-6">
-              {/* Seletor de praia */}
+              {/* Seletor de praia (obrigatório) */}
               <div>
                 <label
                   htmlFor="beach-select"
@@ -304,6 +357,7 @@ export function NewReportPage() {
                   disabled={isSubmitting}
                   onChange={(e) => {
                     setBeachId(e.target.value);
+                    setPostCode(null);
                     setErrorMessage(null);
                   }}
                   className="mt-2 min-h-[48px] w-full rounded-xl border border-[#E2E8F0] bg-white px-3.5 text-sm font-medium text-[#0F172A] focus:border-[#0284C7] focus:outline-none disabled:bg-slate-50"
@@ -317,27 +371,160 @@ export function NewReportPage() {
                 </select>
               </div>
 
-              {/* Avaliação de 1 a 5 sóis */}
+              {/* Posto de salva-vidas (opcional e exibido apenas se a praia tiver postos cadastrados) */}
+              {selectedBeach && availablePosts.length > 0 && (
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-bold text-[#0F172A]">
+                      Posto
+                    </span>
+                    <Badge tone="neutral">Opcional</Badge>
+                  </div>
+                  <p className="mt-0.5 text-xs text-[#475569]">
+                    Informe em qual posto de {selectedBeach.name} você está.
+                  </p>
+                  <div
+                    role="group"
+                    aria-label={`Posto em ${selectedBeach.name}`}
+                    className="mt-2.5 flex flex-wrap gap-2"
+                  >
+                    {availablePosts.map((post) => {
+                      const selected = postCode === post.code;
+                      return (
+                        <button
+                          key={post.code}
+                          type="button"
+                          disabled={isSubmitting}
+                          aria-pressed={selected}
+                          onClick={() => {
+                            setPostCode(selected ? null : post.code);
+                            setErrorMessage(null);
+                          }}
+                          className={`min-h-[44px] rounded-xl px-3.5 py-2 text-xs sm:text-sm transition-colors focus-visible:outline-2 focus-visible:outline-[#0284C7] disabled:opacity-60 ${
+                            selected
+                              ? 'border-2 border-[#0284C7] bg-sky-50 font-bold text-[#0284C7]'
+                              : 'border border-[#CBD5E1] bg-white font-medium text-[#334155] hover:border-[#0284C7]/60 hover:text-[#0F172A]'
+                          }`}
+                        >
+                          {post.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Céu (opcional) */}
               <div>
-                <span className="block text-sm font-bold text-[#0F172A]">
-                  Quantos sóis essa praia merece?
-                </span>
-                <p className="mt-0.5 text-xs text-[#475569]">
-                  Considere sol, vento e mar para ajudar quem vai agora.
-                </p>
-                <div className="mt-2.5">
-                  <SunRatingInput
-                    value={rating}
-                    onChange={(val) => {
-                      if (isSubmitting) return;
-                      setRating(val);
-                      setErrorMessage(null);
-                    }}
-                  />
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-bold text-[#0F172A]">Céu</span>
+                  <Badge tone="neutral">Opcional</Badge>
+                </div>
+                <div
+                  role="group"
+                  aria-label="Condição do céu"
+                  className="mt-2.5 flex flex-wrap gap-2"
+                >
+                  {SKY_CONDITION_OPTIONS.map((option) => {
+                    const selected = skyCondition === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        disabled={isSubmitting}
+                        aria-pressed={selected}
+                        onClick={() => {
+                          setSkyCondition(selected ? null : option.value);
+                          setErrorMessage(null);
+                        }}
+                        className={`min-h-[44px] rounded-xl px-3.5 py-2 text-xs sm:text-sm transition-colors focus-visible:outline-2 focus-visible:outline-[#0284C7] disabled:opacity-60 ${
+                          selected
+                            ? 'border-2 border-[#0284C7] bg-sky-50 font-bold text-[#0284C7]'
+                            : 'border border-[#CBD5E1] bg-white font-medium text-[#334155] hover:border-[#0284C7]/60 hover:text-[#0F172A]'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
-              {/* Comentário curto */}
+              {/* Mar (opcional) */}
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-bold text-[#0F172A]">Mar</span>
+                  <Badge tone="neutral">Opcional</Badge>
+                </div>
+                <div
+                  role="group"
+                  aria-label="Condição do mar"
+                  className="mt-2.5 flex flex-wrap gap-2"
+                >
+                  {SEA_CONDITION_OPTIONS.map((option) => {
+                    const selected = seaCondition === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        disabled={isSubmitting}
+                        aria-pressed={selected}
+                        onClick={() => {
+                          setSeaCondition(selected ? null : option.value);
+                          setErrorMessage(null);
+                        }}
+                        className={`min-h-[44px] rounded-xl px-3.5 py-2 text-xs sm:text-sm transition-colors focus-visible:outline-2 focus-visible:outline-[#0284C7] disabled:opacity-60 ${
+                          selected
+                            ? 'border-2 border-[#0284C7] bg-sky-50 font-bold text-[#0284C7]'
+                            : 'border border-[#CBD5E1] bg-white font-medium text-[#334155] hover:border-[#0284C7]/60 hover:text-[#0F172A]'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Nível de lotação (opcional) */}
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-bold text-[#0F172A]">
+                    Nível de lotação
+                  </span>
+                  <Badge tone="neutral">Opcional</Badge>
+                </div>
+                <div
+                  role="group"
+                  aria-label="Nível de lotação da praia"
+                  className="mt-2.5 flex flex-wrap gap-2"
+                >
+                  {CROWD_LEVEL_OPTIONS.map((option) => {
+                    const selected = crowdLevel === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        disabled={isSubmitting}
+                        aria-pressed={selected}
+                        onClick={() => {
+                          setCrowdLevel(selected ? null : option.value);
+                          setErrorMessage(null);
+                        }}
+                        className={`min-h-[44px] rounded-xl px-3.5 py-2 text-xs sm:text-sm transition-colors focus-visible:outline-2 focus-visible:outline-[#0284C7] disabled:opacity-60 ${
+                          selected
+                            ? 'border-2 border-[#0284C7] bg-sky-50 font-bold text-[#0284C7]'
+                            : 'border border-[#CBD5E1] bg-white font-medium text-[#334155] hover:border-[#0284C7]/60 hover:text-[#0F172A]'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Comentário curto (único campo com contador de caracteres) */}
               <div>
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">

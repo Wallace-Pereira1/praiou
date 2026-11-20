@@ -78,6 +78,18 @@ export interface PublicProfileStats {
 
 export type ReportModerationStatus = 'visible' | 'hidden';
 
+export type ReportSkyCondition = 'clear' | 'partly_cloudy' | 'overcast';
+
+export type ReportSeaCondition = 'calm' | 'moderate' | 'rough';
+
+export type ReportCrowdLevel = 'empty' | 'moderate' | 'crowded';
+
+export interface BeachPostOption {
+  code: string;
+  label: string;
+  sortOrder: number;
+}
+
 export type ReportFlagReason =
   | 'spam'
   | 'harassment'
@@ -101,7 +113,11 @@ export interface BeachReport {
   userName: string;
   userUsername?: string;
   userAvatarUrl?: string;
-  rating: 1 | 2 | 3 | 4 | 5;
+  rating?: 1 | 2 | 3 | 4 | 5 | null;
+  postCode?: string;
+  skyCondition?: ReportSkyCondition;
+  seaCondition?: ReportSeaCondition;
+  crowdLevel?: ReportCrowdLevel;
   comment: string;
   photoPath?: string;
   photoUrl?: string;
@@ -194,7 +210,11 @@ export interface ModerationReportItem {
   authorId: string;
   authorName: string;
   authorAvatarUrl?: string;
-  rating: 1 | 2 | 3 | 4 | 5;
+  rating?: 1 | 2 | 3 | 4 | 5 | null;
+  postCode?: string;
+  skyCondition?: ReportSkyCondition;
+  seaCondition?: ReportSeaCondition;
+  crowdLevel?: ReportCrowdLevel;
   comment: string;
   photoPath?: string;
   photoUrl?: string;
@@ -267,7 +287,10 @@ export interface CreateReportFallbackDisplay {
 
 export interface CreateReportPayload {
   beachId: string;
-  rating: 1 | 2 | 3 | 4 | 5;
+  postCode?: string | null;
+  skyCondition?: ReportSkyCondition | null;
+  seaCondition?: ReportSeaCondition | null;
+  crowdLevel?: ReportCrowdLevel | null;
   comment?: string;
   reportId?: string;
   photoBlob?: Blob | null;

@@ -50,9 +50,9 @@ import type {
 } from '../../types';
 import { setPendingAuthReturnPath } from '../../utils/authRedirect';
 import { formatRelativeTime, getInitials } from '../../utils/formatters';
+import { formatReportConditionsSummary } from '../../utils/reportConditions';
 import { generateReportUuid } from '../../utils/reportImage';
 import { Button } from '../ui/Button';
-import { SunRatingDisplay } from '../ui/StarRating';
 
 interface ReportRepliesModalProps {
   report: BeachReport | null;
@@ -1107,9 +1107,21 @@ export function ReportRepliesModal({
                     {formatRelativeTime(report.createdAt)}
                   </span>
                 </div>
-
-                <SunRatingDisplay rating={report.rating} />
               </div>
+
+              {(() => {
+                const conditionsSummary = formatReportConditionsSummary({
+                  postCode: report.postCode,
+                  skyCondition: report.skyCondition,
+                  seaCondition: report.seaCondition,
+                  crowdLevel: report.crowdLevel,
+                });
+                return conditionsSummary ? (
+                  <p className="mt-1.5 break-words text-xs font-semibold text-[#0F172A]">
+                    {conditionsSummary}
+                  </p>
+                ) : null;
+              })()}
 
               {report.comment && (
                 <p className="mt-1.5 line-clamp-3 break-words text-xs sm:text-sm leading-relaxed text-[#334155]">

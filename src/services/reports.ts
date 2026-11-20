@@ -1,10 +1,18 @@
 import { supabase } from '../lib/supabase';
 import type {
+  BeachPostOption,
   BeachReport,
   CreateReportFallbackDisplay,
   CreateReportPayload,
   PaginatedReportsResult,
 } from '../types';
+import {
+  isValidPostForBeachSlug,
+  normalizeCrowdLevel,
+  normalizePostCode,
+  normalizeSeaCondition,
+  normalizeSkyCondition,
+} from '../utils/reportConditions';
 import {
   REPORT_PHOTOS_BUCKET,
   generateReportUuid,
@@ -78,7 +86,11 @@ interface BaseBeachReportRow {
   id: string;
   beach_id: string;
   user_id: string;
-  rating: number;
+  rating: number | null;
+  post_code?: string | null;
+  sky_condition?: string | null;
+  sea_condition?: string | null;
+  crowd_level?: string | null;
   comment: string | null;
   photo_path: string | null;
   created_at: string;
@@ -98,13 +110,17 @@ interface HelpfulSummaryRpcRow {
 }
 
 const BASE_REPORT_SELECT =
-  'id, beach_id, user_id, rating, comment, photo_path, created_at, moderation_status, moderated_at';
+  'id, beach_id, user_id, rating, post_code, sky_condition, sea_condition, crowd_level, comment, photo_path, created_at, moderation_status, moderated_at';
 
 const REPORT_SELECT = `
   id,
   beach_id,
   user_id,
   rating,
+  post_code,
+  sky_condition,
+  sea_condition,
+  crowd_level,
   comment,
   photo_path,
   created_at,
@@ -143,10 +159,56 @@ function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? (value[0] ?? null) : value;
 }
 
-function normalizeRating(raw: number): 1 | 2 | 3 | 4 | 5 {
+function normalizeRating(
+  raw: number | null | undefined
+): 1 | 2 | 3 | 4 | 5 | null {
+  if (raw == null || !Number.isFinite(raw)) return null;
   if (raw <= 1) return 1;
   if (raw >= 5) return 5;
   return Math.round(raw) as 1 | 2 | 3 | 4 | 5;
+}
+
+interface BeachPostDbRow {
+  beach_id: string;
+  code: string;
+  label: string;
+  sort_order: number;
+}
+
+export async function getBeachPostsMap(): Promise<
+  Map<string, BeachPostOption[]> | null
+> {
+  if (!supabase) {
+    return null;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('beach_posts')
+      .select('beach_id, code, label, sort_order')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true });
+
+    if (error || !Array.isArray(data) || data.length === 0) {
+      return null;
+    }
+
+    const map = new Map<string, BeachPostOption[]>();
+    for (const row of data as BeachPostDbRow[]) {
+      if (!row?.beach_id || !row?.code) continue;
+      const list = map.get(row.beach_id) ?? [];
+      list.push({
+        code: row.code,
+        label: row.label?.trim() || row.code,
+        sortOrder: Number(row.sort_order ?? 0),
+      });
+      map.set(row.beach_id, list);
+    }
+
+    return map;
+  } catch {
+    return null;
+  }
 }
 
 function mapSupabaseReport(
@@ -182,7 +244,11 @@ function mapSupabaseReport(
     userAvatarUrl:
       resolveProfileAvatarUrl(profile?.avatar_path, profile?.avatar_url) ??
       fallbackDisplay?.userAvatarUrl,
-    rating: normalizeRating(Number(row.rating)),
+    rating: normalizeRating(row.rating),
+    postCode: normalizePostCode(row.post_code),
+    skyCondition: normalizeSkyCondition(row.sky_condition),
+    seaCondition: normalizeSeaCondition(row.sea_condition),
+    crowdLevel: normalizeCrowdLevel(row.crowd_level),
     comment: row.comment ?? '',
     photoPath,
     photoUrl,
@@ -665,9 +731,50 @@ export async function createReport(
     throw new ReportPublishError('Entre com sua conta Google para publicar um relato.');
   }
 
+  if (!payload.beachId?.trim()) {
+    throw new ReportPublishError('Escolha a praia antes de publicar.');
+  }
+
   const trimmedComment = payload.comment?.trim() ?? '';
   if (trimmedComment.length > 180) {
     throw new ReportPublishError('O comentário deve ter no máximo 180 caracteres.');
+  }
+
+  const normalizedPostCode = payload.postCode
+    ? normalizePostCode(payload.postCode) ?? null
+    : null;
+  if (payload.postCode && !normalizedPostCode) {
+    throw new ReportPublishError('O posto selecionado é inválido.');
+  }
+  if (
+    normalizedPostCode &&
+    payload.fallbackDisplay?.beachSlug &&
+    !isValidPostForBeachSlug(payload.fallbackDisplay.beachSlug, normalizedPostCode)
+  ) {
+    throw new ReportPublishError(
+      'O posto selecionado não pertence à praia escolhida.'
+    );
+  }
+
+  const normalizedSky = payload.skyCondition
+    ? normalizeSkyCondition(payload.skyCondition) ?? null
+    : null;
+  if (payload.skyCondition && !normalizedSky) {
+    throw new ReportPublishError('A condição de céu informada é inválida.');
+  }
+
+  const normalizedSea = payload.seaCondition
+    ? normalizeSeaCondition(payload.seaCondition) ?? null
+    : null;
+  if (payload.seaCondition && !normalizedSea) {
+    throw new ReportPublishError('A condição de mar informada é inválida.');
+  }
+
+  const normalizedCrowd = payload.crowdLevel
+    ? normalizeCrowdLevel(payload.crowdLevel) ?? null
+    : null;
+  if (payload.crowdLevel && !normalizedCrowd) {
+    throw new ReportPublishError('O nível de lotação informado é inválido.');
   }
 
   let targetPhotoPath = payload.existingPhotoPath?.trim() || null;
@@ -733,7 +840,10 @@ export async function createReport(
       id: reportId,
       beach_id: payload.beachId,
       user_id: sessionUser.id,
-      rating: payload.rating,
+      post_code: normalizedPostCode,
+      sky_condition: normalizedSky,
+      sea_condition: normalizedSea,
+      crowd_level: normalizedCrowd,
       comment: trimmedComment.length > 0 ? trimmedComment : null,
       photo_path: targetPhotoPath,
     })
@@ -760,6 +870,13 @@ export async function createReport(
 
     if (targetPhotoPath) {
       await tryRemoveReportPhoto(targetPhotoPath);
+    }
+
+    if (insertError?.code === '23503' || insertError?.code === '23514' || insertError?.code === '42501') {
+      throw new ReportPublishError(
+        'Não foi possível validar a praia, o posto ou as condições informadas para este relato.',
+        { ambiguous: false }
+      );
     }
 
     throw new ReportPublishError(
